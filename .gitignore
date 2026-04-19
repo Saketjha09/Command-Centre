@@ -1,0 +1,34 @@
+# General
+.env
+.env.*
+*.env
+.DS_Store
+
+# Go backend
+backend/bin/
+backend/build/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+backend/vendor/
+
+# Node frontend
+node_modules/
+npm-debug.log
+yarn-error.log
+dist/
+build/
+coverage/
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Any other local sensitive data
+*.pem
+*.key
+*.cert
