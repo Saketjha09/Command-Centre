@@ -44,5 +44,17 @@ func RegisterRoutes(mux *http.ServeMux, pool *pgxpool.Pool, cfg *config.Config, 
 	// Transition task status — admin and superadmin only.
 	mux.Handle("PATCH /api/v1/tasks/{id}/status",
 		adminOnly(http.HandlerFunc(HandleTransitionStatus(pool, cfg, hub))))
+
+	// Get task history — any authenticated user.
+	mux.Handle("GET /api/v1/tasks/{id}/history",
+		authOnly(http.HandlerFunc(HandleListTaskHistory(pool, cfg))))
+
+	// Global activity feed
+	mux.Handle("GET /api/v1/activity",
+		authOnly(http.HandlerFunc(HandleGlobalActivity(pool, cfg))))
+
+	// Global search — any authenticated user.
+	mux.Handle("GET /api/v1/search",
+		authOnly(http.HandlerFunc(HandleSearch(pool, cfg))))
 }
 

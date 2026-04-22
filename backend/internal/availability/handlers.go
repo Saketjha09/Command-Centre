@@ -105,11 +105,17 @@ func HandleGetUserAvailability(pool *pgxpool.Pool, cfg *config.Config) http.Hand
 }
 
 // HandleGetTodayAvailability handles GET /api/v1/availability/today.
-// Admin/superadmin only (enforced by middleware in routes.go).
-// Returns all users' availability for today's date.
+// Admin/superadmin see all; freelancers see only their own.
 func HandleGetTodayAvailability(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		records, err := GetTodayAllUsers(pool)
+		claims, ok := middleware.ClaimsFromContext(r.Context())
+		if !ok {
+			log.Printf("availability: HandleGetTodayAvailability: missing claims in context")
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+
+		records, err := GetTodayAllUsers(pool, claims)
 		if err != nil {
 			log.Printf("availability: get today all: %v", err)
 			writeError(w, http.StatusInternalServerError, "failed to get today's availability")

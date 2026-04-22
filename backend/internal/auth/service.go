@@ -143,11 +143,15 @@ func ValidateAccessToken(cfg *config.Config, tokenString string) (*TokenClaims, 
 // Explicit field-by-field mapping: no reflection, no struct embedding,
 // no risk of accidentally including hashed_password or rate_multiplier.
 func userRowToResponse(row UserRow) UserResponse {
-	return UserResponse{
+	resp := UserResponse{
 		ID:        row.ID.String(),
 		Name:      row.Name,
 		Email:     row.Email,
 		Role:      row.Role,
 		CreatedAt: row.CreatedAt,
 	}
+	if row.AvatarURL.Valid {
+		resp.AvatarURL = &row.AvatarURL.String
+	}
+	return resp
 }

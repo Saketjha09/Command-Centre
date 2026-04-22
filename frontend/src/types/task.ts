@@ -30,7 +30,9 @@ export interface TaskSummary {
   title: string
   brand: 'master_app' | 'supernova_ai'
   status: string
+  priority: 'low' | 'medium' | 'high' | 'urgent'
   assigned_to: string | null
+  assigned_to_name?: string | null
   deadline: string | null // ISO 8601
   created_at: string
 }
@@ -39,8 +41,10 @@ export interface TaskSummary {
 export interface TaskDetail {
   id: string
   title: string
+  description: string
   brand: 'master_app' | 'supernova_ai'
   status: string
+  priority: 'low' | 'medium' | 'high' | 'urgent'
   assigned_to: string | null
   created_by: string
   deadline: string | null

@@ -4,6 +4,7 @@ export interface AvailabilityRecord {
   date: string        // YYYY-MM-DD
   slot: 'day' | 'evening' | 'night'
   is_available: boolean
+  comment: string
   created_at: string
 }
 
@@ -21,4 +22,5 @@ export interface WeekAvailability {
 export interface SlotInput {
   slot: 'day' | 'evening' | 'night'
   is_available: boolean
+  comment: string
 }

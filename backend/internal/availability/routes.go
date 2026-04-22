@@ -20,17 +20,13 @@ func RegisterRoutes(mux *http.ServeMux, pool *pgxpool.Pool, cfg *config.Config) 
 	authOnly := middleware.Chain(
 		middleware.Authenticate(cfg),
 	)
-	adminOnly := middleware.Chain(
-		middleware.Authenticate(cfg),
-		middleware.RequireRole("superadmin", "admin"),
-	)
 
-	// Get today's availability for ALL users — admin/superadmin only.
-	// Used by the Command Center dashboard to show the daily grid.
+	// Get today's availability — any authenticated user.
+	// Admin/superadmin see all; freelancers see only their own.
 	// Registered BEFORE the {userID} wildcard to prevent "today" being
 	// captured as a userID.
 	mux.Handle("GET /api/v1/availability/today",
-		adminOnly(http.HandlerFunc(HandleGetTodayAvailability(pool, cfg))))
+		authOnly(http.HandlerFunc(HandleGetTodayAvailability(pool, cfg))))
 
 	// Upsert availability for a specific user+date — any authenticated user.
 	// Service layer enforces own-only access for freelancers.

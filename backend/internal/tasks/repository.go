@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/saket/command-center/backend/internal/auth"
 )
 
 // Package-level sentinel errors for the tasks repository.
@@ -35,33 +36,50 @@ const dbTimeout = 5 * time.Second
 // detailCols is the explicit column list for full TaskDetail scans.
 // Order must match scanTaskDetail exactly.
 const detailCols = `
-	id, title, brand, status,
+	id, title, description, brand::text, status::text, priority::text,
 	assigned_to, created_by, deadline,
 	notification_failed, created_at, updated_at`
 
 // summaryCols is the explicit column list for TaskSummary list scans.
 const summaryCols = `
-	id, title, brand, status, assigned_to, deadline, created_at`
+	t.id, t.title, t.brand, t.status, t.priority, t.assigned_to, t.deadline, t.created_at, u.name as assigned_to_name`
 
 // ── write operations ──────────────────────────────────────────────────────────
 
 // CreateTask inserts a new task with status defaulting to 'brief_pending'
 // (defined at the schema level) and returns the full TaskDetail.
 // created_by is required by the schema NOT NULL constraint.
+// CreateTask inserts a new task and logs the creation action.
 func createTask(_ context.Context, pool *pgxpool.Pool, req CreateTaskRequest, createdBy string) (TaskDetail, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
 
-	const q = `
-		INSERT INTO ops.tasks (title, brand, deadline, created_by)
-		VALUES ($1, $2, $3, $4)
-		RETURNING` + detailCols
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return TaskDetail{}, fmt.Errorf("tasks: begin create tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
 
-	row := pool.QueryRow(ctx, q, req.Title, req.Brand, req.Deadline, createdBy)
+	const q = `
+		INSERT INTO ops.tasks (title, description, brand, priority, deadline, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING ` + detailCols
+
+	row := tx.QueryRow(ctx, q, req.Title, req.Description, req.Brand, req.Priority, req.Deadline, createdBy)
 	detail, err := scanTaskDetail(row)
 	if err != nil {
-		return TaskDetail{}, fmt.Errorf("tasks: create task: %w", err)
+		return TaskDetail{}, fmt.Errorf("tasks: create task insert: %w", err)
 	}
+
+	// Log creation
+	if err := logTaskAction(ctx, tx, detail.ID, createdBy, "created", nil, nil); err != nil {
+		return TaskDetail{}, fmt.Errorf("tasks: log create history: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return TaskDetail{}, fmt.Errorf("tasks: commit create tx: %w", err)
+	}
+
 	return detail, nil
 }
 
@@ -71,7 +89,8 @@ func createTask(_ context.Context, pool *pgxpool.Pool, req CreateTaskRequest, cr
 //
 // Returns ErrTaskNotFound if no task matches taskID.
 // Returns ErrAlreadyAssigned if the task already has a non-null assigned_to.
-func assignTask(_ context.Context, pool *pgxpool.Pool, taskID, userID string) (TaskDetail, error) {
+// AssignTask sets the assigned_to field of a task inside a transaction.
+func assignTask(_ context.Context, pool *pgxpool.Pool, taskID, userID, performingUserID string) (TaskDetail, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
 
@@ -79,29 +98,15 @@ func assignTask(_ context.Context, pool *pgxpool.Pool, taskID, userID string) (T
 	if err != nil {
 		return TaskDetail{}, fmt.Errorf("tasks: begin assign tx: %w", err)
 	}
-	defer tx.Rollback(ctx) // no-op after Commit
+	defer tx.Rollback(ctx)
 
-	// Step 1 — Lock the row exclusively so no concurrent assign can race us.
-	const selectQ = `
-		SELECT` + detailCols + `
-		FROM ops.tasks
-		WHERE id = $1
-		FOR UPDATE`
-
+	const selectQ = `SELECT` + detailCols + ` FROM ops.tasks WHERE id = $1 FOR UPDATE`
 	current, err := scanTaskDetail(tx.QueryRow(ctx, selectQ, taskID))
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return TaskDetail{}, ErrTaskNotFound
-		}
+		if errors.Is(err, pgx.ErrNoRows) { return TaskDetail{}, ErrTaskNotFound }
 		return TaskDetail{}, fmt.Errorf("tasks: lock task for assign: %w", err)
 	}
 
-	// Step 2 — Reject if already assigned. Checked inside the lock.
-	if current.AssignedTo != nil {
-		return TaskDetail{}, ErrAlreadyAssigned
-	}
-
-	// Step 3 — Apply the assignment and return the updated row via RETURNING.
 	const updateQ = `
 		UPDATE ops.tasks
 		SET assigned_to = $1, updated_at = now()
@@ -113,7 +118,11 @@ func assignTask(_ context.Context, pool *pgxpool.Pool, taskID, userID string) (T
 		return TaskDetail{}, fmt.Errorf("tasks: assign task update: %w", err)
 	}
 
-	// Step 4 — Commit.
+	// Log assignment
+	if err := logTaskAction(ctx, tx, taskID, performingUserID, "assigned", current.AssignedTo, &userID); err != nil {
+		return TaskDetail{}, fmt.Errorf("tasks: log assign history: %w", err)
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return TaskDetail{}, fmt.Errorf("tasks: commit assign tx: %w", err)
 	}
@@ -122,34 +131,48 @@ func assignTask(_ context.Context, pool *pgxpool.Pool, taskID, userID string) (T
 }
 
 // TransitionStatus validates the status transition via the state machine, then
-// applies the update. GetTaskByID is called first for a plain read — no
-// transaction needed because the UPDATE itself is atomic.
-func transitionStatus(_ context.Context, pool *pgxpool.Pool, taskID, newStatus string) (TaskDetail, error) {
-	// Step 1 — Fetch current status with a plain read.
-	current, err := getTaskByID(context.Background(), pool, taskID)
-	if err != nil {
-		return TaskDetail{}, err // ErrTaskNotFound propagates unchanged
-	}
-
-	// Step 2 — Validate via the pure state machine.
-	if err := ValidateTransition(current.Status, newStatus); err != nil {
-		return TaskDetail{}, err // ErrInvalidTransition propagates unchanged
-	}
-
-	// Step 3 — Apply and return the updated row.
+// applies the update and logs the action in a transaction.
+func transitionStatus(_ context.Context, pool *pgxpool.Pool, taskID, newStatus, performingUserID string) (TaskDetail, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
 
-	const q = `
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return TaskDetail{}, fmt.Errorf("tasks: begin transition tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	const selectQ = `SELECT` + detailCols + ` FROM ops.tasks WHERE id = $1 FOR UPDATE`
+	current, err := scanTaskDetail(tx.QueryRow(ctx, selectQ, taskID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) { return TaskDetail{}, ErrTaskNotFound }
+		return TaskDetail{}, fmt.Errorf("tasks: lock task for status: %w", err)
+	}
+
+	if err := ValidateTransition(current.Status, newStatus); err != nil {
+		return TaskDetail{}, err
+	}
+
+	const updateQ = `
 		UPDATE ops.tasks
 		SET status = $1, updated_at = now()
 		WHERE id = $2
 		RETURNING` + detailCols
 
-	detail, err := scanTaskDetail(pool.QueryRow(ctx, q, newStatus, taskID))
+	detail, err := scanTaskDetail(tx.QueryRow(ctx, updateQ, newStatus, taskID))
 	if err != nil {
 		return TaskDetail{}, fmt.Errorf("tasks: transition status update: %w", err)
 	}
+
+	// Log transition
+	if err := logTaskAction(ctx, tx, taskID, performingUserID, "status_change", &current.Status, &newStatus); err != nil {
+		return TaskDetail{}, fmt.Errorf("tasks: log transition history: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return TaskDetail{}, fmt.Errorf("tasks: commit transition tx: %w", err)
+	}
+
 	return detail, nil
 }
 
@@ -166,7 +189,13 @@ func getTaskByID(_ context.Context, pool *pgxpool.Pool, id string) (TaskDetail, 
 		FROM ops.tasks
 		WHERE id = $1`
 
-	detail, err := scanTaskDetail(pool.QueryRow(ctx, q, id))
+	uuidID, err := uuid.Parse(id)
+	if err != nil {
+		return TaskDetail{}, fmt.Errorf("tasks: invalid uuid format: %w", err)
+	}
+
+	row := pool.QueryRow(ctx, q, uuidID)
+	detail, err := scanTaskDetail(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return TaskDetail{}, ErrTaskNotFound
@@ -176,23 +205,33 @@ func getTaskByID(_ context.Context, pool *pgxpool.Pool, id string) (TaskDetail, 
 	return detail, nil
 }
 
-// ListTasks returns tasks optionally filtered by brand and/or status.
+// listTasks returns tasks optionally filtered by brand and/or status.
 // Pass empty strings to omit a filter. Results are ordered by created_at DESC.
 // Always returns an empty slice (never nil) so the JSON response is [] not null.
-func listTasks(_ context.Context, pool *pgxpool.Pool, brand, status string) ([]TaskSummary, error) {
+func listTasks(_ context.Context, pool *pgxpool.Pool, claims *auth.TokenClaims, brand, status string) ([]TaskSummary, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
 
 	// Cast enum columns to text for comparison so empty-string filters
 	// pass through without triggering an invalid enum cast.
-	const q = `
+	q := `
 		SELECT` + summaryCols + `
-		FROM ops.tasks
-		WHERE ($1 = '' OR brand::text  = $1)
-		  AND ($2 = '' OR status::text = $2)
-		ORDER BY created_at DESC`
+		FROM ops.tasks t
+		LEFT JOIN ops.users u ON t.assigned_to = u.id
+		WHERE ($1 = '' OR t.brand::text  = $1)
+		  AND ($2 = '' OR t.status::text = $2)`
 
-	rows, err := pool.Query(ctx, q, brand, status)
+	args := []any{brand, status}
+
+	// RBAC: Freelancers only see their assigned tasks.
+	if claims != nil && claims.Role == "freelancer" {
+		q += ` AND (t.assigned_to = $3)`
+		args = append(args, claims.UserID)
+	}
+
+	q += ` ORDER BY t.created_at DESC`
+
+	rows, err := pool.Query(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("tasks: list tasks query: %w", err)
 	}
@@ -212,6 +251,117 @@ func listTasks(_ context.Context, pool *pgxpool.Pool, brand, status string) ([]T
 	return result, nil
 }
 
+// logTaskAction inserts a history record.
+func logTaskAction(ctx context.Context, tx pgx.Tx, taskID, userID, action string, from, to *string) error {
+	const q = `
+		INSERT INTO ops.task_history (task_id, user_id, action, from_value, to_value)
+		VALUES ($1, $2, $3, $4, $5)`
+	_, err := tx.Exec(ctx, q, taskID, userID, action, from, to)
+	return err
+}
+
+// listTaskHistory fetches history entries for a task, joined with user names.
+func listTaskHistory(_ context.Context, pool *pgxpool.Pool, taskID string) ([]TaskHistoryEntry, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+	defer cancel()
+
+	const q = `
+		SELECT h.id, h.task_id, h.user_id, u.name, h.action, h.from_value, h.to_value, h.created_at
+		FROM ops.task_history h
+		JOIN ops.users u ON h.user_id = u.id
+		WHERE h.task_id = $1
+		ORDER BY h.created_at DESC`
+
+	rows, err := pool.Query(ctx, q, taskID)
+	if err != nil {
+		return nil, fmt.Errorf("tasks: list history query: %w", err)
+	}
+	defer rows.Close()
+
+	return scanHistoryRows(rows)
+}
+
+// listGlobalActivity fetches the latest history entries across all tasks.
+func listGlobalActivity(pool *pgxpool.Pool, limit int) ([]TaskHistoryEntry, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+	defer cancel()
+
+	const q = `
+		SELECT h.id, h.task_id, h.user_id, u.name, h.action, h.from_value, h.to_value, h.created_at
+		FROM ops.task_history h
+		JOIN ops.users u ON h.user_id = u.id
+		ORDER BY h.created_at DESC
+		LIMIT $1`
+
+	rows, err := pool.Query(ctx, q, limit)
+	if err != nil {
+		return nil, fmt.Errorf("tasks: list global history query: %w", err)
+	}
+	defer rows.Close()
+
+	return scanHistoryRows(rows)
+}
+
+func scanHistoryRows(rows pgx.Rows) ([]TaskHistoryEntry, error) {
+	var history []TaskHistoryEntry
+	for rows.Next() {
+		var h TaskHistoryEntry
+		var from, to pgtype.Text
+		var id, tID, uID pgtype.UUID
+		if err := rows.Scan(&id, &tID, &uID, &h.UserName, &h.Action, &from, &to, &h.CreatedAt); err != nil {
+			return nil, fmt.Errorf("tasks: scan history: %w", err)
+		}
+		h.ID = pgUUIDString(id)
+		h.TaskID = pgUUIDString(tID)
+		h.UserID = pgUUIDString(uID)
+		if from.Valid { h.FromValue = &from.String }
+		if to.Valid { h.ToValue = &to.String }
+		history = append(history, h)
+	}
+	return history, nil
+}
+
+// searchAll performs a fuzzy search across tasks (by title) and users (by name).
+func searchAll(_ context.Context, pool *pgxpool.Pool, query string) ([]SearchResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+	defer cancel()
+
+	if query == "" { return []SearchResult{}, nil }
+	
+	// Fuzzy match with simple ILIKE %q%
+	const q = `
+		(
+			SELECT id::text, 'task' as type, title, status as subtitle, '' as avatar
+			FROM ops.tasks
+			WHERE title ILIKE '%' || $1 || '%'
+			LIMIT 10
+		)
+		UNION ALL
+		(
+			SELECT id::text, 'user' as type, name as title, role as subtitle, COALESCE(avatar_url, '') as avatar
+			FROM ops.users
+			WHERE name ILIKE '%' || $1 || '%'
+			LIMIT 10
+		)
+		LIMIT 20`
+
+	rows, err := pool.Query(ctx, q, query)
+	if err != nil {
+		return nil, fmt.Errorf("tasks: search query: %w", err)
+	}
+	defer rows.Close()
+
+	var results []SearchResult
+	for rows.Next() {
+		var r SearchResult
+		if err := rows.Scan(&r.ID, &r.Type, &r.Title, &r.Subtitle, &r.Avatar); err != nil {
+			return nil, fmt.Errorf("tasks: scan search: %w", err)
+		}
+		results = append(results, r)
+	}
+	return results, nil
+}
+
 // ── scan helpers ──────────────────────────────────────────────────────────────
 
 // scanTaskDetail scans a pgx.Row into a TaskDetail.
@@ -220,7 +370,9 @@ func listTasks(_ context.Context, pool *pgxpool.Pool, brand, status string) ([]T
 func scanTaskDetail(row pgx.Row) (TaskDetail, error) {
 	var (
 		id                 pgtype.UUID
-		title, brand, status string
+		title              string
+		description        pgtype.Text
+		brand, status, priority string
 		assignedTo         pgtype.UUID
 		createdBy          pgtype.UUID
 		deadline           pgtype.Timestamptz
@@ -228,7 +380,7 @@ func scanTaskDetail(row pgx.Row) (TaskDetail, error) {
 		createdAt, updatedAt time.Time
 	)
 	if err := row.Scan(
-		&id, &title, &brand, &status,
+		&id, &title, &description, &brand, &status, &priority,
 		&assignedTo, &createdBy, &deadline,
 		&notifFailed, &createdAt, &updatedAt,
 	); err != nil {
@@ -238,8 +390,10 @@ func scanTaskDetail(row pgx.Row) (TaskDetail, error) {
 	d := TaskDetail{
 		ID:                 pgUUIDString(id),
 		Title:              title,
+		Description:        description.String,
 		Brand:              brand,
 		Status:             status,
+		Priority:           priority,
 		CreatedBy:          pgUUIDString(createdBy),
 		NotificationFailed: notifFailed,
 		CreatedAt:          createdAt,
@@ -260,12 +414,13 @@ func scanTaskDetail(row pgx.Row) (TaskDetail, error) {
 func scanTaskSummary(rows pgx.Rows) (TaskSummary, error) {
 	var (
 		id                   pgtype.UUID
-		title, brand, status string
+		title, brand, status, priority string
 		assignedTo           pgtype.UUID
 		deadline             pgtype.Timestamptz
 		createdAt            time.Time
+		assignedToName       pgtype.Text
 	)
-	if err := rows.Scan(&id, &title, &brand, &status, &assignedTo, &deadline, &createdAt); err != nil {
+	if err := rows.Scan(&id, &title, &brand, &status, &priority, &assignedTo, &deadline, &createdAt, &assignedToName); err != nil {
 		return TaskSummary{}, err
 	}
 	s := TaskSummary{
@@ -273,11 +428,15 @@ func scanTaskSummary(rows pgx.Rows) (TaskSummary, error) {
 		Title:     title,
 		Brand:     brand,
 		Status:    status,
+		Priority:  priority,
 		CreatedAt: createdAt,
 	}
 	if assignedTo.Valid {
 		str := pgUUIDString(assignedTo)
 		s.AssignedTo = &str
+	}
+	if assignedToName.Valid {
+		s.AssignedToName = &assignedToName.String
 	}
 	if deadline.Valid {
 		t := deadline.Time

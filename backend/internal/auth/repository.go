@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,6 +29,18 @@ var (
 
 const dbTimeout = 5 * time.Second
 
+// isTransientDBConnectionError identifies short-lived DB connectivity failures
+// where a single retry is often enough after a container/network blip.
+func isTransientDBConnectionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "failed to connect") ||
+		strings.Contains(msg, "connection refused") ||
+		strings.Contains(msg, "database system is starting up")
+}
+
 // CreateUser inserts a new user into ops.users and returns the persisted row.
 // The passed context is intentionally ignored; a fresh 5-second budget derived
 // from context.Background() is always used so HTTP request cancellations
@@ -39,12 +52,18 @@ func CreateUser(_ context.Context, pool *pgxpool.Pool, req RegisterRequest, hash
 	const q = `
 		INSERT INTO ops.users (name, email, hashed_password, role)
 		VALUES ($1, $2, $3, $4)
-		RETURNING id, name, email, hashed_password, role, slack_user_id, created_at`
+		RETURNING id, name, email, hashed_password, role, slack_user_id, avatar_url, created_at`
 
 	var row UserRow
 	err := pool.QueryRow(ctx, q, req.Name, req.Email, hashedPassword, req.Role).
 		Scan(&row.ID, &row.Name, &row.Email, &row.HashedPassword,
-			&row.Role, &row.SlackUserID, &row.CreatedAt)
+			&row.Role, &row.SlackUserID, &row.AvatarURL, &row.CreatedAt)
+	if err != nil && isTransientDBConnectionError(err) {
+		time.Sleep(150 * time.Millisecond)
+		err = pool.QueryRow(ctx, q, req.Name, req.Email, hashedPassword, req.Role).
+			Scan(&row.ID, &row.Name, &row.Email, &row.HashedPassword,
+				&row.Role, &row.SlackUserID, &row.AvatarURL, &row.CreatedAt)
+	}
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -62,14 +81,20 @@ func GetUserByEmail(_ context.Context, pool *pgxpool.Pool, email string) (UserRo
 	defer cancel()
 
 	const q = `
-		SELECT id, name, email, hashed_password, role, slack_user_id, created_at
+		SELECT id, name, email, hashed_password, role, slack_user_id, avatar_url, created_at
 		FROM ops.users
 		WHERE email = $1`
 
 	var row UserRow
 	err := pool.QueryRow(ctx, q, email).
 		Scan(&row.ID, &row.Name, &row.Email, &row.HashedPassword,
-			&row.Role, &row.SlackUserID, &row.CreatedAt)
+			&row.Role, &row.SlackUserID, &row.AvatarURL, &row.CreatedAt)
+	if err != nil && isTransientDBConnectionError(err) {
+		time.Sleep(150 * time.Millisecond)
+		err = pool.QueryRow(ctx, q, email).
+			Scan(&row.ID, &row.Name, &row.Email, &row.HashedPassword,
+				&row.Role, &row.SlackUserID, &row.AvatarURL, &row.CreatedAt)
+	}
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return UserRow{}, ErrUserNotFound
@@ -87,14 +112,20 @@ func GetUserByID(_ context.Context, pool *pgxpool.Pool, id uuid.UUID) (UserRow, 
 	defer cancel()
 
 	const q = `
-		SELECT id, name, email, hashed_password, role, slack_user_id, created_at
+		SELECT id, name, email, hashed_password, role, slack_user_id, avatar_url, created_at
 		FROM ops.users
 		WHERE id = $1`
 
 	var row UserRow
 	err := pool.QueryRow(ctx, q, id).
 		Scan(&row.ID, &row.Name, &row.Email, &row.HashedPassword,
-			&row.Role, &row.SlackUserID, &row.CreatedAt)
+			&row.Role, &row.SlackUserID, &row.AvatarURL, &row.CreatedAt)
+	if err != nil && isTransientDBConnectionError(err) {
+		time.Sleep(150 * time.Millisecond)
+		err = pool.QueryRow(ctx, q, id).
+			Scan(&row.ID, &row.Name, &row.Email, &row.HashedPassword,
+				&row.Role, &row.SlackUserID, &row.AvatarURL, &row.CreatedAt)
+	}
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return UserRow{}, ErrUserNotFound
@@ -115,8 +146,86 @@ func CreateSession(_ context.Context, pool *pgxpool.Pool, userID uuid.UUID, toke
 		VALUES ($1, $2, $3)`
 
 	_, err := pool.Exec(ctx, q, userID, tokenHash, expiresAt)
+	if err != nil && isTransientDBConnectionError(err) {
+		time.Sleep(150 * time.Millisecond)
+		_, err = pool.Exec(ctx, q, userID, tokenHash, expiresAt)
+	}
 	if err != nil {
 		return fmt.Errorf("auth: create session: %w", err)
 	}
 	return nil
+}
+
+// ListUsers fetches all active users.
+func ListUsers(_ context.Context, pool *pgxpool.Pool) ([]UserRow, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+	defer cancel()
+
+	const q = `
+		SELECT id, name, email, hashed_password, role, slack_user_id, avatar_url, created_at
+		FROM ops.users
+		ORDER BY name ASC`
+
+	rows, err := pool.Query(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("auth: list users: %w", err)
+	}
+	defer rows.Close()
+
+	var users []UserRow
+	for rows.Next() {
+		var row UserRow
+		if err := rows.Scan(&row.ID, &row.Name, &row.Email, &row.HashedPassword,
+			&row.Role, &row.SlackUserID, &row.AvatarURL, &row.CreatedAt); err != nil {
+			return nil, fmt.Errorf("auth: scan user row: %w", err)
+		}
+		users = append(users, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("auth: rows loop error: %w", err)
+	}
+
+	return users, nil
+}
+
+// UpdateUser updates specific fields for a user.
+func UpdateUser(_ context.Context, pool *pgxpool.Pool, userID uuid.UUID, name, email string) (UserRow, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+	defer cancel()
+
+	const q = `
+		UPDATE ops.users
+		SET name = $2, email = $3
+		WHERE id = $1
+		RETURNING id, name, email, hashed_password, role, slack_user_id, avatar_url, created_at`
+
+	var row UserRow
+	err := pool.QueryRow(ctx, q, userID, name, email).
+		Scan(&row.ID, &row.Name, &row.Email, &row.HashedPassword,
+			&row.Role, &row.SlackUserID, &row.AvatarURL, &row.CreatedAt)
+	if err != nil {
+		return UserRow{}, fmt.Errorf("auth: update user: %w", err)
+	}
+	return row, nil
+}
+
+// UpdateUserAvatar updates the avatar URL for a user.
+func UpdateUserAvatar(_ context.Context, pool *pgxpool.Pool, userID uuid.UUID, avatarURL string) (UserRow, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+	defer cancel()
+
+	const q = `
+		UPDATE ops.users
+		SET avatar_url = $2
+		WHERE id = $1
+		RETURNING id, name, email, hashed_password, role, slack_user_id, avatar_url, created_at`
+
+	var row UserRow
+	err := pool.QueryRow(ctx, q, userID, avatarURL).
+		Scan(&row.ID, &row.Name, &row.Email, &row.HashedPassword,
+			&row.Role, &row.SlackUserID, &row.AvatarURL, &row.CreatedAt)
+	if err != nil {
+		return UserRow{}, fmt.Errorf("auth: update user avatar: %w", err)
+	}
+	return row, nil
 }

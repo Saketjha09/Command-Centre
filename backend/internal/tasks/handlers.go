@@ -3,6 +3,7 @@ package tasks
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -69,14 +70,20 @@ func HandleCreateTask(pool *pgxpool.Pool, cfg *config.Config, hub WSBroadcaster)
 // HandleListTasks handles GET /api/v1/tasks (any authenticated user).
 func HandleListTasks(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := middleware.ClaimsFromContext(r.Context())
+		if !ok {
+			log.Printf("tasks: HandleListTasks: missing claims in context")
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+
 		brand := r.URL.Query().Get("brand")
 		status := r.URL.Query().Get("status")
 
-		tasks, err := ListTasks(pool, brand, status)
+		tasks, err := ListTasks(pool, claims, brand, status)
 		if err != nil {
 			switch {
 			case errors.Is(err, ErrValidation):
-				// Strip the internal sentinel prefix; send only the human-readable message.
 				writeError(w, http.StatusBadRequest, strings.TrimPrefix(err.Error(), ErrValidation.Error()+": "))
 			default:
 				log.Printf("tasks: list: %v", err)
@@ -101,7 +108,7 @@ func HandleGetTask(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 				writeError(w, http.StatusNotFound, "task not found")
 			default:
 				log.Printf("tasks: get(%s): %v", id, err)
-				writeError(w, http.StatusInternalServerError, "failed to get task")
+				writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to get task: %v", err))
 			}
 			return
 		}
@@ -150,16 +157,27 @@ func HandleAssignTask(pool *pgxpool.Pool, cfg *config.Config, hub WSBroadcaster)
 
 		// Fire notification AFTER the HTTP response is written — truly fire-and-forget.
 		if task.AssignedTo != nil {
-			// Phase 2: pass the user UUID as the Slack channel ID.
-			// TODO Phase 3: look up slack_user_id from ops.users before dispatching.
-			notifications.DispatchTaskAssignmentNotification(
-				pool, cfg,
-				task.ID,
-				*task.AssignedTo,
-				task.Title,
-				task.Brand,
-				deadlineStr(task.Deadline),
-			)
+			go func(tid, uid, title, brand, deadline string) {
+				var slackID *string
+				err := pool.QueryRow(r.Context(), "SELECT slack_user_id FROM ops.users WHERE id = $1", uid).Scan(&slackID)
+				if err != nil {
+					log.Printf("notifications: failed to lookup slack_user_id for user %s: %v", uid, err)
+					return
+				}
+				if slackID == nil || *slackID == "" {
+					log.Printf("notifications: user %s has no slack_user_id configured", uid)
+					return
+				}
+
+				notifications.DispatchTaskAssignmentNotification(
+					pool, cfg,
+					tid,
+					*slackID,
+					title,
+					brand,
+					deadline,
+				)
+			}(task.ID, *task.AssignedTo, task.Title, task.Brand, deadlineStr(task.Deadline))
 		}
 	}
 }
@@ -209,5 +227,46 @@ func HandleTransitionStatus(pool *pgxpool.Pool, cfg *config.Config, hub WSBroadc
 
 		BroadcastStatusChanged(hub, task)
 		writeJSON(w, http.StatusOK, task)
+	}
+}
+
+// HandleListTaskHistory handles GET /api/v1/tasks/{id}/history.
+func HandleListTaskHistory(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		history, err := ListTaskHistory(pool, id)
+		if err != nil {
+			log.Printf("tasks: history(%s): %v", id, err)
+			writeError(w, http.StatusInternalServerError, "failed to get task history")
+			return
+		}
+		writeJSON(w, http.StatusOK, history)
+	}
+}
+
+// HandleGlobalActivity handles GET /api/v1/activity.
+func HandleGlobalActivity(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		history, err := listGlobalActivity(pool, 20)
+		if err != nil {
+			log.Printf("tasks: global activity: %v", err)
+			writeError(w, http.StatusInternalServerError, "failed to get activity")
+			return
+		}
+		writeJSON(w, http.StatusOK, history)
+	}
+}
+
+// HandleSearch handles GET /api/v1/search.
+func HandleSearch(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query().Get("q")
+		results, err := GlobalSearch(pool, q)
+		if err != nil {
+			log.Printf("tasks: search(%s): %v", q, err)
+			writeError(w, http.StatusInternalServerError, "search failed")
+			return
+		}
+		writeJSON(w, http.StatusOK, SearchResponse{Results: results})
 	}
 }

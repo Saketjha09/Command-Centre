@@ -103,7 +103,7 @@ func UpsertAvailability(
 			isAvail = false
 		}
 
-		rec, err := upsertSlot(pool, targetUserID, dateStr, s.Slot, isAvail)
+		rec, err := upsertSlot(pool, targetUserID, dateStr, s.Slot, isAvail, s.Comment)
 		if err != nil {
 			return DayAvailability{}, fmt.Errorf("availability: upsert slot %q: %w", s.Slot, err)
 		}
@@ -178,12 +178,17 @@ func GetUserAvailability(
 	}, nil
 }
 
-// GetTodayAllUsers returns all availability records for today across all users.
-// This is admin-only — authorization is enforced at the route level via
-// RequireRole middleware, not here.
-func GetTodayAllUsers(pool *pgxpool.Pool) ([]AvailabilityRecord, error) {
+// GetTodayAllUsers returns availability records for today.
+// Admin/superadmin see all; freelancers see only their own.
+func GetTodayAllUsers(pool *pgxpool.Pool, claims *auth.TokenClaims) ([]AvailabilityRecord, error) {
 	today := time.Now().UTC().Format("2006-01-02")
-	records, err := getAllAvailabilityForDate(pool, today)
+	
+	var filterUserID string
+	if claims.Role == "freelancer" {
+		filterUserID = claims.UserID
+	}
+
+	records, err := getAllAvailabilityForDate(pool, today, filterUserID)
 	if err != nil {
 		return nil, fmt.Errorf("availability: get today all: %w", err)
 	}

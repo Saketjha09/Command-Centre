@@ -46,14 +46,14 @@ func CreateTask(pool *pgxpool.Pool, claims *auth.TokenClaims, req CreateTaskRequ
 
 // ListTasks returns tasks with optional brand/status filters.
 // Empty string means no filter for that dimension.
-func ListTasks(pool *pgxpool.Pool, brand, status string) ([]TaskSummary, error) {
+func ListTasks(pool *pgxpool.Pool, claims *auth.TokenClaims, brand, status string) ([]TaskSummary, error) {
 	if brand != "" && !validBrands[brand] {
 		return nil, fmt.Errorf("%w: brand must be one of: master_app, supernova_ai", ErrValidation)
 	}
 	if status != "" && !validStatuses[status] {
 		return nil, fmt.Errorf("%w: status must be one of: brief_pending, in_progress, review, approved, paid", ErrValidation)
 	}
-	return listTasks(context.Background(), pool, brand, status)
+	return listTasks(context.Background(), pool, claims, brand, status)
 }
 
 // GetTask fetches a single task by string UUID.
@@ -77,7 +77,7 @@ func AssignTask(pool *pgxpool.Pool, claims *auth.TokenClaims, taskID, userID str
 		return TaskDetail{}, fmt.Errorf("%w: user_id is required", ErrValidation)
 	}
 	// ErrTaskNotFound and ErrAlreadyAssigned propagate unchanged.
-	return assignTask(context.Background(), pool, taskID, userID)
+	return assignTask(context.Background(), pool, taskID, userID, claims.UserID)
 }
 
 // TransitionStatus validates newStatus against known values, then delegates to
@@ -92,5 +92,18 @@ func TransitionStatus(pool *pgxpool.Pool, claims *auth.TokenClaims, taskID, newS
 		)
 	}
 	// ErrTaskNotFound and ErrInvalidTransition propagate unchanged.
-	return transitionStatus(context.Background(), pool, taskID, newStatus)
+	return transitionStatus(context.Background(), pool, taskID, newStatus, claims.UserID)
+}
+
+// ListTaskHistory returns the history entries for a task.
+func ListTaskHistory(pool *pgxpool.Pool, id string) ([]TaskHistoryEntry, error) {
+	if strings.TrimSpace(id) == "" {
+		return nil, fmt.Errorf("%w: task id is required", ErrValidation)
+	}
+	return listTaskHistory(context.Background(), pool, id)
+}
+
+// GlobalSearch performs a search across the entire application.
+func GlobalSearch(pool *pgxpool.Pool, query string) ([]SearchResult, error) {
+	return searchAll(context.Background(), pool, query)
 }

@@ -17,6 +17,8 @@ import (
 
 	"github.com/saket/command-center/backend/internal/auth"
 	"github.com/saket/command-center/backend/internal/availability"
+	"github.com/saket/command-center/backend/internal/brands"
+	"github.com/saket/command-center/backend/internal/notifications"
 	"github.com/saket/command-center/backend/internal/db"
 	"github.com/saket/command-center/backend/internal/tasks"
 	"github.com/saket/command-center/backend/internal/ws"
@@ -92,6 +94,10 @@ func main() {
 	// Auth domain: register, login, logout, me.
 	auth.RegisterRoutes(mux, pool, cfg)
 
+	// User listing — any authenticated user.
+	mux.Handle("GET /api/v1/users",
+		middleware.Authenticate(cfg)(http.HandlerFunc(auth.HandleListUsers(pool, cfg))))
+
 	// Rate limit auth mutation endpoints — 10 req/min per IP
 	loginRateLimit := middleware.RateLimit(10, time.Minute)
 	mux.Handle("POST /api/v1/auth/login",
@@ -106,9 +112,18 @@ func main() {
 	// Availability domain: upsert, per-user lookahead, daily dashboard grid.
 	availability.RegisterRoutes(mux, pool, cfg)
 
+	// Brands domain: dynamic brand management.
+	brands.RegisterRoutes(mux, pool, cfg)
+
+	// Notifications domain: Slack pings, etc.
+	notifications.RegisterRoutes(mux, pool, cfg)
+
 	// WebSocket endpoint — auth is validated inside the handler (pre-upgrade).
 	// Cannot use middleware chain here: HTTP error codes are impossible post-upgrade.
 	mux.HandleFunc("GET /api/v1/ws", ws.HandleWebSocket(hub, cfg))
+
+	// Serve static files from uploads directory
+	mux.Handle("GET /uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir("uploads"))))
 
 	// -------------------------------------------------------------------------
 	// 4. Construct the HTTP server.

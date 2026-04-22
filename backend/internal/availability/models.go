@@ -10,6 +10,7 @@ type AvailabilityRecord struct {
 	Date        string    `json:"date"`         // YYYY-MM-DD format
 	Slot        string    `json:"slot"`          // day | evening | night
 	IsAvailable bool      `json:"is_available"`
+	Comment     string    `json:"comment"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 
@@ -17,6 +18,7 @@ type AvailabilityRecord struct {
 type SlotInput struct {
 	Slot        string `json:"slot"`
 	IsAvailable bool   `json:"is_available"`
+	Comment     string `json:"comment"`
 }
 
 // UpsertAvailabilityRequest — body for PUT /api/v1/availability/{userID}/{date}.

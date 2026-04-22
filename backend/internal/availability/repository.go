@@ -16,14 +16,14 @@ var ErrNoRecords = errors.New("availability: no records found")
 
 // returnCols are used in RETURNING / SELECT clauses.
 // date and slot are cast to text to avoid pgtype enum scanning.
-const returnCols = "id, user_id, date::text, slot::text, is_available, created_at"
+const returnCols = "id, user_id, date::text, slot::text, is_available, COALESCE(comment, ''), created_at"
 
 // ── scan helper ──────────────────────────────────────────────────────────────
 
 // scanRecord scans a single row into an AvailabilityRecord.
 func scanRecord(row pgx.Row) (AvailabilityRecord, error) {
 	var r AvailabilityRecord
-	err := row.Scan(&r.ID, &r.UserID, &r.Date, &r.Slot, &r.IsAvailable, &r.CreatedAt)
+	err := row.Scan(&r.ID, &r.UserID, &r.Date, &r.Slot, &r.IsAvailable, &r.Comment, &r.CreatedAt)
 	return r, err
 }
 
@@ -33,7 +33,7 @@ func scanRecords(rows pgx.Rows) ([]AvailabilityRecord, error) {
 	records := make([]AvailabilityRecord, 0)
 	for rows.Next() {
 		var r AvailabilityRecord
-		if err := rows.Scan(&r.ID, &r.UserID, &r.Date, &r.Slot, &r.IsAvailable, &r.CreatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.UserID, &r.Date, &r.Slot, &r.IsAvailable, &r.Comment, &r.CreatedAt); err != nil {
 			return nil, err
 		}
 		records = append(records, r)
@@ -46,18 +46,18 @@ func scanRecords(rows pgx.Rows) ([]AvailabilityRecord, error) {
 // upsertSlot inserts or updates a single availability slot.
 // Uses INSERT ... ON CONFLICT DO UPDATE to guarantee atomicity —
 // never DELETE + INSERT, which risks partial failures leaving gaps.
-func upsertSlot(pool *pgxpool.Pool, userID, date, slot string, isAvailable bool) (AvailabilityRecord, error) {
+func upsertSlot(pool *pgxpool.Pool, userID, date, slot string, isAvailable bool, comment string) (AvailabilityRecord, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	query := `
-		INSERT INTO ops.availability (user_id, date, slot, is_available)
-		VALUES ($1, $2::date, $3::ops.availability_slot, $4)
+		INSERT INTO ops.availability (user_id, date, slot, is_available, comment)
+		VALUES ($1, $2::date, $3::ops.availability_slot, $4, $5)
 		ON CONFLICT (user_id, date, slot)
-		DO UPDATE SET is_available = EXCLUDED.is_available
+		DO UPDATE SET is_available = EXCLUDED.is_available, comment = EXCLUDED.comment
 		RETURNING ` + returnCols
 
-	row := pool.QueryRow(ctx, query, userID, date, slot, isAvailable)
+	row := pool.QueryRow(ctx, query, userID, date, slot, isAvailable, comment)
 	return scanRecord(row)
 }
 
@@ -103,20 +103,26 @@ func getAvailabilityForDate(pool *pgxpool.Pool, userID, date string) ([]Availabi
 	return scanRecords(rows)
 }
 
-// getAllAvailabilityForDate returns availability records for ALL users on a
-// specific date. Used by the daily dashboard grid (admin-only endpoint).
-// Returns an empty slice (not nil) when no rows match.
-func getAllAvailabilityForDate(pool *pgxpool.Pool, date string) ([]AvailabilityRecord, error) {
+// getAllAvailabilityForDate returns availability records for today.
+// If filterUserID is non-empty, only that user's records are returned.
+func getAllAvailabilityForDate(pool *pgxpool.Pool, date, filterUserID string) ([]AvailabilityRecord, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	query := `
 		SELECT ` + returnCols + `
 		FROM ops.availability
-		WHERE date = $1::date
-		ORDER BY user_id ASC, slot ASC`
+		WHERE date = $1::date`
+	
+	args := []any{date}
+	if filterUserID != "" {
+		query += ` AND user_id = $2`
+		args = append(args, filterUserID)
+	}
 
-	rows, err := pool.Query(ctx, query, date)
+	query += ` ORDER BY user_id ASC, slot ASC`
+
+	rows, err := pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

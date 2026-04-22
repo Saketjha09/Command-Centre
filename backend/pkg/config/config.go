@@ -66,7 +66,7 @@ func Load() (*Config, error) {
 	}
 
 	if cfg.GOEnv != "production" && cfg.AllowedOrigins == "" {
-		cfg.AllowedOrigins = "http://localhost:5173"
+		cfg.AllowedOrigins = "http://localhost:5173,http://localhost:5174"
 	}
 
 	var missing []string

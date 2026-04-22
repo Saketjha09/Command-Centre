@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { WSMessage } from '../types/task'
 
-const WS_URL = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8080/api/v1/ws'
+const WS_URL = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8080'
 
 type ConnectionStatus = 'connecting' | 'connected' | 'disconnected'
 
@@ -39,7 +39,7 @@ export function useWebSocket(options: UseWebSocketOptions): {
     if (unmountedRef.current) return
 
     setStatus('connecting')
-    const ws = new WebSocket(WS_URL)
+    const ws = new WebSocket(`${WS_URL}/api/v1/ws`)
     wsRef.current = ws
 
     ws.onopen = () => {

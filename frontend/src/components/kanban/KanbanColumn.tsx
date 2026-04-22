@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import type { TaskSummary } from '../../types/task'
-import type { TaskStatus } from '../../types/task'
+import type { TaskSummary, TaskStatus } from '../../types/task'
 import { STATUS_LABELS } from '../../types/task'
 import { TaskCard } from './TaskCard'
 
@@ -9,6 +8,16 @@ interface KanbanColumnProps {
   tasks: TaskSummary[]
   transitioningTaskId: string | null
   onDrop: (taskId: string, fromStatus: string, toStatus: string) => void
+  onTaskClick: (taskId: string) => void
+  onAdd: () => void
+}
+
+const STATUS_ACCENT: Record<string, string> = {
+  brief_pending: 'border-t-zinc-500',
+  in_progress: 'border-t-indigo-500',
+  review: 'border-t-amber-500',
+  approved: 'border-t-emerald-500',
+  paid: 'border-t-blue-500',
 }
 
 export function KanbanColumn({
@@ -16,6 +25,8 @@ export function KanbanColumn({
   tasks,
   transitioningTaskId,
   onDrop,
+  onTaskClick,
+  onAdd,
 }: KanbanColumnProps) {
   const [isDragOver, setIsDragOver] = useState(false)
 
@@ -26,7 +37,6 @@ export function KanbanColumn({
   }
 
   function handleDragLeave(e: React.DragEvent<HTMLDivElement>) {
-    // Only clear when leaving the column entirely (not a child element).
     if (!e.currentTarget.contains(e.relatedTarget as Node)) {
       setIsDragOver(false)
     }
@@ -42,46 +52,45 @@ export function KanbanColumn({
     }
   }
 
+  const accentColor = STATUS_ACCENT[status] || 'border-t-zinc-500'
+
   return (
     <div
-      className="flex flex-col shrink-0 rounded-xl transition-all duration-150"
-      style={{
-        width: 280,
-        backgroundColor: '#1a1d27',
-        border: isDragOver ? '1px solid #6366f1' : '1px solid rgba(255,255,255,0.05)',
-        boxShadow: isDragOver ? '0 0 0 1px #6366f1, inset 0 0 20px rgba(99,102,241,0.05)' : undefined,
-      }}
+      className={`flex-1 min-w-[280px] flex flex-col max-h-full rounded-2xl bg-[#18181b]/50 transition-all duration-150 border border-[#27272a] border-t-2 ${accentColor} ${
+        isDragOver ? 'bg-[#27272a]/50' : ''
+      }`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
       {/* Column header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
-        <span className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">
-          {STATUS_LABELS[status]}
-        </span>
-        <span className="text-xs font-semibold tabular-nums px-2 py-0.5 rounded-full bg-white/5 text-slate-400">
-          {tasks.length}
-        </span>
+      <div className="flex items-center justify-between px-4 py-4">
+        <div className="flex items-center gap-2.5">
+          <span className="text-[11px] tracking-widest uppercase font-bold text-[#71717a]">
+            {STATUS_LABELS[status] ?? status}
+          </span>
+          <span className="text-[10px] font-bold tabular-nums px-2 py-0.5 rounded bg-[#27272a] text-[#a1a1aa] border border-[#3f3f46]">
+            {tasks.length}
+          </span>
+        </div>
+        <button 
+          onClick={onAdd} 
+          className="text-[#71717a] hover:text-[#fafafa] hover:bg-[#27272a] p-1.5 rounded-lg transition-all"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4"/></svg>
+        </button>
       </div>
 
-      {/* Card list — scrollable */}
-      <div className="flex flex-col gap-2.5 p-3 overflow-y-auto flex-1"
-           style={{ maxHeight: 'calc(100vh - 140px)' }}>
-        {tasks.length === 0 ? (
-          <div className="flex items-center justify-center rounded-lg py-8
-            border border-dashed border-white/10 text-slate-600 text-sm">
-            No tasks
-          </div>
-        ) : (
-          tasks.map(task => (
-            <TaskCard
-              key={task.id}
-              task={task}
-              isTransitioning={transitioningTaskId === task.id}
-            />
-          ))
-        )}
+      {/* Card list */}
+      <div className="flex flex-col gap-2 overflow-y-auto px-2 py-2 flex-1 min-h-[100px]">
+        {tasks.map(task => (
+          <TaskCard
+            key={task.id}
+            task={task}
+            isTransitioning={transitioningTaskId === task.id}
+            onClick={() => onTaskClick(task.id)}
+          />
+        ))}
       </div>
     </div>
   )

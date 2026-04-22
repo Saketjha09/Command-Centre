@@ -1,4 +1,5 @@
 import type { TaskSummary, TaskDetail } from '../types/task'
+import type { Brand } from '../types/brand'
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
 
@@ -27,6 +28,21 @@ export async function fetchTasks(
 }
 
 /**
+ * Get a single task by ID.
+ * Maps to GET /api/v1/tasks/{id}
+ */
+export async function fetchTaskById(taskId: string): Promise<TaskDetail> {
+  const res = await fetch(`${BASE_URL}/api/v1/tasks/${taskId}`, defaultOptions)
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    const msg = body.error || res.statusText
+    throw new Error(`fetchTaskById: ${res.status} ${msg}`)
+  }
+  return res.json() as Promise<TaskDetail>
+}
+
+/**
  * Transition a task to a new status.
  * Maps to PATCH /api/v1/tasks/{id}/status
  */
@@ -46,4 +62,153 @@ export async function transitionTaskStatus(
     throw new Error(`transitionTaskStatus: ${res.status} — ${body}`)
   }
   return res.json() as Promise<TaskDetail>
+}
+
+/**
+ * Create a new task.
+ * Maps to POST /api/v1/tasks
+ */
+export async function createTask(req: {
+  title: string
+  brand: string
+  deadline?: string
+}): Promise<TaskDetail> {
+  const res = await fetch(`${BASE_URL}/api/v1/tasks`, {
+    ...defaultOptions,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  })
+
+  if (!res.ok) {
+    if (res.status === 401) throw new Error('Unauthorized')
+    const body = await res.text()
+    throw new Error(body || `createTask: ${res.status}`)
+  }
+  return res.json() as Promise<TaskDetail>
+}
+
+/**
+ * Assign a task to a user.
+ * Maps to PATCH /api/v1/tasks/{id}/assign
+ */
+export async function assignTask(taskId: string, userId: string): Promise<TaskDetail> {
+  const res = await fetch(`${BASE_URL}/api/v1/tasks/${taskId}/assign`, {
+    ...defaultOptions,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: userId }),
+  })
+
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(`assignTask: ${res.status} — ${body}`)
+  }
+  return res.json() as Promise<TaskDetail>
+}
+
+/**
+ * Fetch all users via GET /api/v1/users.
+ */
+export async function fetchUsers(): Promise<any[]> {
+  const res = await fetch(`${BASE_URL}/api/v1/users`, defaultOptions)
+
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(`fetchUsers: ${res.status} — ${body}`)
+  }
+  return res.json()
+}
+
+/**
+ * Update current user's profile.
+ */
+export async function updateProfile(data: { name: string; email: string }): Promise<any> {
+  const res = await fetch(`${BASE_URL}/api/v1/auth/me`, {
+    ...defaultOptions,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(`updateProfile: ${res.status} — ${body}`)
+  }
+  return res.json()
+}
+
+/**
+ * Fetch history for a task.
+ */
+export async function fetchTaskHistory(taskId: string): Promise<any[]> {
+  const res = await fetch(`${BASE_URL}/api/v1/tasks/${taskId}/history`, defaultOptions)
+  if (!res.ok) throw new Error(`fetchTaskHistory: ${res.status}`)
+  return res.json()
+}
+
+/**
+ * Upload a profile avatar.
+ */
+export async function uploadAvatar(file: File): Promise<any> {
+  const formData = new FormData()
+  formData.append('avatar', file)
+
+  const res = await fetch(`${BASE_URL}/api/v1/auth/avatar`, {
+    ...defaultOptions,
+    method: 'POST',
+    body: formData,
+  })
+
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(`uploadAvatar: ${res.status} — ${body}`)
+  }
+  return res.json()
+}
+
+/**
+ * Search across tasks and users.
+ */
+export async function globalSearch(query: string): Promise<{ results: any[] }> {
+  const res = await fetch(`${BASE_URL}/api/v1/search?q=${encodeURIComponent(query)}`, defaultOptions)
+  if (!res.ok) throw new Error(`globalSearch: ${res.status}`)
+  return res.json()
+}
+
+/**
+ * Fetch global activity feed.
+ */
+export async function fetchGlobalActivity(): Promise<any[]> {
+  const res = await fetch(`${BASE_URL}/api/v1/activity`, defaultOptions)
+  if (!res.ok) throw new Error(`fetchGlobalActivity: ${res.status}`)
+  return res.json()
+}
+
+/**
+ * Brand management services.
+ */
+export async function fetchBrands(): Promise<Brand[]> {
+  const res = await fetch(`${BASE_URL}/api/v1/brands`, defaultOptions)
+  if (!res.ok) throw new Error(`fetchBrands: ${res.status}`)
+  return res.json()
+}
+
+export async function createBrand(data: { name: string; slug: string; hex_color: string }): Promise<Brand> {
+  const res = await fetch(`${BASE_URL}/api/v1/brands`, {
+    ...defaultOptions,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  })
+  if (!res.ok) throw new Error(`createBrand: ${res.status}`)
+  return res.json()
+}
+
+export async function deleteBrand(id: string): Promise<void> {
+  const res = await fetch(`${BASE_URL}/api/v1/brands/${id}`, {
+    ...defaultOptions,
+    method: 'DELETE'
+  })
+  if (!res.ok) throw new Error(`deleteBrand: ${res.status}`)
 }

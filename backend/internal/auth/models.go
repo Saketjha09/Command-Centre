@@ -20,16 +20,17 @@ type UserRow struct {
 	HashedPassword string   // bcrypt hash — never leaves the server
 	Role           string
 	SlackUserID    pgtype.Text // nullable TEXT column
+	AvatarURL      pgtype.Text // New: avatar image path
 	CreatedAt      time.Time
 }
 
 // UserResponse is the ONLY struct returned to clients.
-// Intentionally omits: hashed_password, rate_multiplier, slack_user_id.
 type UserResponse struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	Email     string    `json:"email"`
 	Role      string    `json:"role"`
+	AvatarURL *string   `json:"avatar_url,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 

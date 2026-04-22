@@ -3,105 +3,99 @@ import type { TaskSummary } from '../../types/task'
 interface TaskCardProps {
   task: TaskSummary
   isTransitioning: boolean
+  onClick: () => void
 }
 
-/** Formats a deadline ISO string as "Dec 31" */
-function formatDeadline(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-  })
+const PRIORITY_COLORS: Record<string, string> = {
+  low: 'bg-[#27272a] text-[#a1a1aa] border-[#3f3f46]',
+  medium: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20',
+  high: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+  urgent: 'bg-rose-500/10 text-rose-400 border-rose-500/20',
 }
 
-/** Returns urgency class based on how close the deadline is. */
-function deadlineClass(iso: string): string {
-  const now = new Date()
-  const deadline = new Date(iso)
-  const diffMs = deadline.getTime() - now.getTime()
-  const diffDays = diffMs / (1000 * 60 * 60 * 24)
-
-  if (diffDays < 0) return 'text-red-400'
-  if (diffDays <= 3) return 'text-amber-400'
-  return 'text-slate-500'
+function getDeadlineLabel(deadline: string): string {
+  const days = Math.ceil((new Date(deadline).getTime() - Date.now()) / 86400000)
+  if (days < 0) return `${Math.abs(days)}d late`
+  if (days === 0) return 'Today'
+  return `${days}d`
 }
 
-const BRAND_STYLES: Record<string, string> = {
-  master_app: 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30',
-  supernova_ai: 'bg-violet-500/20 text-violet-300 border border-violet-500/30',
-}
-
-const BRAND_LABELS: Record<string, string> = {
-  master_app: 'Master App',
-  supernova_ai: 'Supernova AI',
-}
-
-export function TaskCard({ task, isTransitioning }: TaskCardProps) {
+export function TaskCard({ task, isTransitioning, onClick }: TaskCardProps) {
   function handleDragStart(e: React.DragEvent<HTMLDivElement>) {
     if (isTransitioning) { e.preventDefault(); return }
     e.dataTransfer.effectAllowed = 'move'
     e.dataTransfer.setData('taskId', task.id)
     e.dataTransfer.setData('fromStatus', task.status)
+    setTimeout(() => {
+      if (e.target instanceof HTMLElement) {
+        e.target.classList.add('dragging')
+      }
+    }, 0)
   }
+
+  const isOverdue = task.deadline && 
+    new Date(task.deadline).getTime() < Date.now() && 
+    task.status !== 'approved' && 
+    task.status !== 'paid'
 
   return (
     <div
       draggable={!isTransitioning}
       onDragStart={handleDragStart}
-      role="button"
-      aria-label={`Task: ${task.title}`}
-      className="group rounded-lg p-3.5 cursor-grab active:cursor-grabbing
-        border border-white/5 shadow-lg
-        transition-all duration-150 ease-in-out
-        hover:-translate-y-0.5 hover:shadow-indigo-900/30 hover:border-white/10"
-      style={{
-        backgroundColor: '#242736',
-        opacity: isTransitioning ? 0.5 : 1,
-        pointerEvents: isTransitioning ? 'none' : undefined,
-      }}
+      onDragEnd={e => e.currentTarget.classList.remove('dragging')}
+      onClick={onClick}
+      className={`
+        group relative flex flex-col gap-2.5 p-3.5 bg-[#18181b] rounded-xl border transition-all duration-300 cursor-grab active:cursor-grabbing shadow-sm
+        ${isOverdue ? 'border-rose-500/30 bg-rose-500/[0.02]' : 'border-[#27272a] hover:border-indigo-500/30'}
+        ${isTransitioning ? 'opacity-40 grayscale pointer-events-none' : 'hover:bg-[#1c1c1f] hover:-translate-y-0.5 hover:shadow-xl hover:shadow-indigo-500/5'}
+      `}
     >
-      {/* Brand badge */}
-      <div className="flex items-center justify-between mb-2.5">
-        <span className={`text-[10px] font-semibold uppercase tracking-widest px-2 py-0.5 rounded-full ${BRAND_STYLES[task.brand] ?? ''}`}>
-          {BRAND_LABELS[task.brand] ?? task.brand}
-        </span>
-
-        {/* Assigned avatar placeholder */}
-        {task.assigned_to ? (
-          <div
-            className="w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center
-              text-[10px] font-bold text-white ring-2 ring-[#242736]"
-            title={`Assigned: ${task.assigned_to.slice(0, 8)}`}
-          >
-            {task.assigned_to.slice(0, 1).toUpperCase()}
-          </div>
-        ) : (
-          <div className="w-6 h-6 rounded-full border border-dashed border-slate-600" title="Unassigned" />
-        )}
+      {/* Top Row: Brand & Priority */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="px-2 py-0.5 rounded-md bg-[#09090b] border border-[#27272a] text-[9px] font-bold text-[#71717a] uppercase tracking-wider">
+            {task.brand.replace('_', ' ')}
+          </span>
+        </div>
+        <div className={`px-2 py-0.5 rounded-md border text-[8px] font-black uppercase tracking-widest ${PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.medium}`}>
+           {task.priority}
+        </div>
       </div>
 
       {/* Title */}
-      <p className="text-sm font-medium text-slate-200 leading-snug mb-2 line-clamp-2">
+      <h4 className="text-[13px] font-bold text-[#fafafa] leading-snug line-clamp-2 group-hover:text-indigo-400 transition-colors">
         {task.title}
-      </p>
+      </h4>
 
-      {/* Deadline */}
-      {task.deadline && (
-        <div className={`flex items-center gap-1 text-xs ${deadlineClass(task.deadline)}`}>
-          <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round"
-              d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-          </svg>
-          <span>{formatDeadline(task.deadline)}</span>
+      {/* Footer: Deadline & Assignee */}
+      <div className="flex items-center justify-between mt-0.5">
+        <div className="flex items-center gap-2">
+           {task.deadline ? (
+             <div className={`flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-tight ${isOverdue ? 'text-rose-400' : 'text-[#52525b]'}`}>
+                <svg className="w-3 h-3 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                {getDeadlineLabel(task.deadline)}
+             </div>
+           ) : (
+             <div className="text-[10px] font-bold text-[#27272a] uppercase">No date</div>
+           )}
         </div>
-      )}
 
-      {/* Transitioning spinner overlay */}
-      {isTransitioning && (
-        <div className="flex items-center gap-1.5 mt-2">
-          <div className="w-3 h-3 rounded-full border-2 border-indigo-400 border-t-transparent animate-spin" />
-          <span className="text-[10px] text-indigo-400">Moving…</span>
-        </div>
-      )}
+        {task.assigned_to_name ? (
+           <div className="flex items-center gap-2">
+              <span className="text-[9px] font-bold text-[#52525b] uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity duration-300">{task.assigned_to_name.split(' ')[0]}</span>
+              <div className="w-6 h-6 rounded-full bg-indigo-600 border border-indigo-500 flex items-center justify-center text-[9px] font-black text-white uppercase shadow-lg shadow-indigo-500/20">
+                {task.assigned_to_name[0]}
+              </div>
+           </div>
+        ) : (
+           <div className="w-6 h-6 rounded-full border border-dashed border-[#27272a] flex items-center justify-center">
+              <svg className="w-3 h-3 text-[#3f3f46]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+           </div>
+        )}
+      </div>
+
+      {/* Pulse for Overdue */}
+      {isOverdue && <div className="absolute inset-0 rounded-xl border border-rose-500/20 animate-pulse pointer-events-none" />}
     </div>
   )
 }

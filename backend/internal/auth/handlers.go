@@ -4,8 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -81,6 +85,7 @@ func HandleLogin(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 				writeError(w, http.StatusUnauthorized, "invalid credentials")
 				return
 			}
+			log.Printf("login: unexpected error: %v", err)
 			writeError(w, http.StatusInternalServerError, "login failed")
 			return
 		}
@@ -90,8 +95,8 @@ func HandleLogin(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 			Name:     "access_token",
 			Value:    accessToken,
 			HttpOnly: true,
-			Secure:   true,
-			SameSite: http.SameSiteStrictMode,
+			Secure:   false,
+			SameSite: http.SameSiteLaxMode,
 			MaxAge:   900, // 15 * 60
 			Path:     cookiePathAccess,
 		})
@@ -101,8 +106,8 @@ func HandleLogin(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 			Name:     "refresh_token",
 			Value:    refreshToken,
 			HttpOnly: true,
-			Secure:   true,
-			SameSite: http.SameSiteStrictMode,
+			Secure:   false,
+			SameSite: http.SameSiteLaxMode,
 			MaxAge:   604800, // 7 * 24 * 60 * 60
 			Path:     cookiePathRefresh,
 		})
@@ -161,8 +166,8 @@ func HandleLogout() http.HandlerFunc {
 			Name:     "access_token",
 			Value:    "",
 			HttpOnly: true,
-			Secure:   true,
-			SameSite: http.SameSiteStrictMode,
+			Secure:   false,
+			SameSite: http.SameSiteLaxMode,
 			MaxAge:   -1,
 			Path:     cookiePathAccess,
 		})
@@ -170,11 +175,132 @@ func HandleLogout() http.HandlerFunc {
 			Name:     "refresh_token",
 			Value:    "",
 			HttpOnly: true,
-			Secure:   true,
-			SameSite: http.SameSiteStrictMode,
+			Secure:   false,
+			SameSite: http.SameSiteLaxMode,
 			MaxAge:   -1,
 			Path:     cookiePathRefresh,
 		})
 		writeJSON(w, http.StatusOK, map[string]string{"message": "logged out"})
+	}
+}
+
+// HandleListUsers handles GET /api/v1/users.
+// Validates the access_token and returns a list of client-safe UserResponses.
+func HandleListUsers(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		rows, err := ListUsers(r.Context(), pool)
+		if err != nil {
+			log.Printf("users: list: %v", err)
+			writeError(w, http.StatusInternalServerError, "failed to list users")
+			return
+		}
+
+		var resp []UserResponse
+		// Convert to client safe response
+		for _, row := range rows {
+			resp = append(resp, userRowToResponse(row))
+		}
+
+		writeJSON(w, http.StatusOK, resp)
+	}
+}
+
+// HandleUpdateProfile handles PATCH /api/v1/auth/me.
+func HandleUpdateProfile(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie("access_token")
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "missing access token")
+			return
+		}
+
+		claims, err := ValidateAccessToken(cfg, cookie.Value)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "invalid or expired token")
+			return
+		}
+
+		userID, _ := uuid.Parse(claims.UserID)
+
+		var req struct {
+			Name  string `json:"name"`
+			Email string `json:"email"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+
+		row, err := UpdateUser(r.Context(), pool, userID, req.Name, req.Email)
+		if err != nil {
+			log.Printf("auth: update profile: %v", err)
+			writeError(w, http.StatusInternalServerError, "failed to update profile")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, userRowToResponse(row))
+	}
+}
+
+// HandleUploadAvatar handles POST /api/v1/auth/avatar.
+func HandleUploadAvatar(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie("access_token")
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "missing access token")
+			return
+		}
+
+		claims, err := ValidateAccessToken(cfg, cookie.Value)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "invalid or expired token")
+			return
+		}
+
+		userID, _ := uuid.Parse(claims.UserID)
+
+		// 1MB max file size
+		r.ParseMultipartForm(1 << 20)
+		file, header, err := r.FormFile("avatar")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "no file uploaded")
+			return
+		}
+		defer file.Close()
+
+		// Ensure directory exists
+		uploadDir := filepath.Join("uploads", "avatars")
+		os.MkdirAll(uploadDir, 0755)
+
+		// Create unique filename
+		ext := filepath.Ext(header.Filename)
+		filename := fmt.Sprintf("%s%s", userID.String(), ext)
+		savePath := filepath.Join(uploadDir, filename)
+		publicURL := fmt.Sprintf("/uploads/avatars/%s", filename)
+
+		// Save to disk
+		out, err := os.Create(savePath)
+		if err != nil {
+			log.Printf("auth: avatar upload: %v", err)
+			writeError(w, http.StatusInternalServerError, "failed to save avatar")
+			return
+		}
+		defer out.Close()
+
+		if _, err := io.Copy(out, file); err != nil {
+			log.Printf("auth: avatar copy: %v", err)
+			writeError(w, http.StatusInternalServerError, "failed to process avatar")
+			return
+		}
+
+		// Update DB
+		row, err := UpdateUserAvatar(r.Context(), pool, userID, publicURL)
+		if err != nil {
+			log.Printf("auth: avatar db update: %v", err)
+			writeError(w, http.StatusInternalServerError, "failed to update user avatar")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, userRowToResponse(row))
 	}
 }

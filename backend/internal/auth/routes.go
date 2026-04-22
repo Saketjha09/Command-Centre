@@ -14,4 +14,6 @@ import (
 func RegisterRoutes(mux *http.ServeMux, pool *pgxpool.Pool, cfg *config.Config) {
 	mux.HandleFunc("POST /api/v1/auth/logout",   HandleLogout())
 	mux.HandleFunc("GET /api/v1/auth/me",        HandleMe(pool, cfg))
+	mux.HandleFunc("PATCH /api/v1/auth/me",      HandleUpdateProfile(pool, cfg))
+	mux.HandleFunc("POST /api/v1/auth/avatar",   HandleUploadAvatar(pool, cfg))
 }
