@@ -11,11 +11,6 @@ const TIME_SLOTS = [
   { id: 'night', label: 'Night', time: '9 PM - 1 AM' },
 ] as const;
 
-/**
- * Freelancer View: 7-day interactive grid (7 cols x 3 rows).
- * Clicking cells toggles availability. Comments handled via unified sidebar/modal if needed,
- * but here we focus on the core grid interaction.
- */
 function FreelancerAvailability({ userID }: { userID: string }) {
   const [weekData, setWeekData] = useState<WeekAvailability | null>(null);
   const [loading, setLoading] = useState(true);
@@ -62,7 +57,6 @@ function FreelancerAvailability({ userID }: { userID: string }) {
     setSuccess(null);
 
     try {
-      // Save all days that were modified (or just all 7 for simplicity)
       await Promise.all(weekData.days.map(day => {
         const slots: SlotInput[] = day.slots.map(s => ({
           slot: s.slot as 'day' | 'evening' | 'night',
@@ -80,65 +74,60 @@ function FreelancerAvailability({ userID }: { userID: string }) {
     }
   };
 
-  if (loading) return <div className="h-full flex items-center justify-center"><LoadingSpinner size="lg" /></div>;
+  if (loading) return <div className="h-full flex items-center justify-center bg-white"><LoadingSpinner size="lg" /></div>;
 
   return (
-    <div className="flex flex-col gap-8 p-8 h-full overflow-y-auto custom-scrollbar bg-[#09090b]">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-3xl font-bold text-[#fafafa] tracking-tight">My Availability</h1>
-          <p className="text-[#71717a] text-sm max-w-2xl leading-relaxed">
+    <div className="flex flex-col gap-10 p-10 h-full overflow-y-auto custom-scrollbar bg-white">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="flex flex-col gap-2">
+          <h1 className="text-3xl font-bold text-gray-900 tracking-tight">My Availability</h1>
+          <p className="text-gray-400 text-[13px] font-medium max-w-2xl leading-relaxed">
             Toggle your availability for the upcoming week. Click cells to switch between Busy and Ready.
           </p>
         </div>
         <button 
           onClick={handleSaveAll}
           disabled={isSaving}
-          className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-[#4f46e5] hover:bg-[#6366f1] disabled:opacity-50 text-white text-sm font-bold transition-all shadow-lg shadow-indigo-500/20 active:scale-95 shrink-0"
+          className="flex items-center gap-2 px-8 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-[13px] font-bold transition-all shadow-lg shadow-indigo-100 active:scale-95 shrink-0"
         >
           {isSaving ? <LoadingSpinner size="sm" /> : 'Save Weekly Plan'}
         </button>
       </div>
 
       {(error || success) && (
-        <div className={`p-4 rounded-xl border animate-in fade-in slide-in-from-top-2 duration-300 ${
-          error ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+        <div className={`p-4 rounded-xl border fade-in ${
+          error ? 'bg-red-50 border-red-100 text-red-600' : 'bg-green-50 border-green-100 text-green-600'
         }`}>
-          <div className="flex items-center gap-3 text-sm font-medium">
-            <div className={`w-1.5 h-1.5 rounded-full ${error ? 'bg-red-500' : 'bg-emerald-500'}`} />
+          <div className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-widest">
+            <div className={`w-1.5 h-1.5 rounded-full ${error ? 'bg-red-500' : 'bg-green-500'}`} />
             {error || success}
           </div>
         </div>
       )}
 
       {/* Grid Container */}
-      <div className="bg-[#18181b] border border-[#27272a] rounded-2xl overflow-hidden shadow-2xl">
-        <div className="grid grid-cols-8 border-b border-[#27272a]">
-          {/* Top Left Corner */}
-          <div className="p-4 bg-[#18181b] border-r border-[#27272a] flex items-center justify-center">
-             <span className="text-[10px] font-bold text-[#52525b] uppercase tracking-widest">Slots</span>
+      <div className="bg-white border border-gray-200 rounded-3xl overflow-hidden shadow-sm">
+        <div className="grid grid-cols-8 border-b border-gray-100">
+          <div className="p-5 bg-gray-50/50 border-r border-gray-100 flex items-center justify-center">
+             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em]">Slots</span>
           </div>
-          {/* Day Headers */}
           {weekData?.days.map(day => (
-            <div key={day.date} className="p-4 flex flex-col items-center justify-center border-r border-[#27272a] last:border-r-0 bg-[#18181b]">
-              <span className="text-[11px] font-bold text-[#fafafa] uppercase tracking-wider">
+            <div key={day.date} className="p-5 flex flex-col items-center justify-center border-r border-gray-100 last:border-r-0 bg-gray-50/50">
+              <span className="text-[11px] font-bold text-gray-900 uppercase tracking-widest">
                 {new Date(day.date).toLocaleDateString(undefined, { weekday: 'short' })}
               </span>
-              <span className="text-[10px] font-mono text-[#52525b] mt-0.5">{day.date.split('-').slice(1).join('/')}</span>
+              <span className="text-[10px] font-bold text-gray-400 mt-1 uppercase">{day.date.split('-').slice(1).join('/')}</span>
             </div>
           ))}
         </div>
 
-        {/* Rows */}
         {TIME_SLOTS.map(slotMeta => (
-          <div key={slotMeta.id} className="grid grid-cols-8 border-b border-[#27272a] last:border-b-0">
-            {/* Slot Label Column */}
-            <div className="p-4 bg-[#18181b] border-r border-[#27272a] flex flex-col items-center justify-center text-center">
-              <span className="text-xs font-bold text-[#fafafa] uppercase">{slotMeta.label}</span>
-              <span className="text-[9px] text-[#52525b] font-medium mt-1 uppercase tracking-tighter">{slotMeta.time}</span>
+          <div key={slotMeta.id} className="grid grid-cols-8 border-b border-gray-100 last:border-b-0">
+            <div className="p-5 bg-gray-50/50 border-r border-gray-100 flex flex-col items-center justify-center text-center">
+              <span className="text-[11px] font-bold text-gray-900 uppercase tracking-widest">{slotMeta.label}</span>
+              <span className="text-[9px] text-gray-400 font-bold mt-1 uppercase tracking-tighter">{slotMeta.time}</span>
             </div>
 
-            {/* Availability Cells */}
             {weekData?.days.map(day => {
               const slot = day.slots.find(s => s.slot === slotMeta.id) || {
                 slot: slotMeta.id,
@@ -149,36 +138,34 @@ function FreelancerAvailability({ userID }: { userID: string }) {
                 <div 
                   key={`${day.date}-${slotMeta.id}`} 
                   onClick={() => toggleSlot(day.date, slotMeta.id)}
-                  className={`relative p-2 h-24 border-r border-[#27272a] last:border-r-0 cursor-pointer transition-all group overflow-hidden ${
+                  className={`relative p-2.5 h-28 border-r border-gray-100 last:border-r-0 cursor-pointer transition-all group overflow-hidden ${
                     slot.is_available 
-                      ? 'bg-emerald-500/5 hover:bg-emerald-500/10' 
-                      : 'bg-red-500/5 hover:bg-red-500/10'
+                      ? 'bg-green-50/10 hover:bg-green-50/30' 
+                      : 'bg-red-50/10 hover:bg-red-50/30'
                   }`}
                 >
-                  <div className={`w-full h-full rounded-lg flex flex-col items-center justify-center gap-2 border transition-all duration-300 ${
+                  <div className={`w-full h-full rounded-2xl flex flex-col items-center justify-center gap-2 border transition-all duration-300 ${
                     slot.is_available 
-                      ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' 
-                      : 'bg-red-500/10 border-red-500/20 text-red-400 opacity-60'
+                      ? 'bg-green-50 border-green-100 text-green-600' 
+                      : 'bg-red-50 border-red-100 text-red-500 opacity-50'
                   }`}>
                     {slot.is_available ? (
                       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7"/></svg>
                     ) : (
                       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12"/></svg>
                     )}
-                    <span className="text-[10px] font-bold uppercase tracking-widest">
+                    <span className="text-[10px] font-bold uppercase tracking-[0.2em]">
                        {slot.is_available ? 'Ready' : 'Busy'}
                     </span>
                   </div>
 
-                  {/* Comment Indicator */}
                   {slot.comment && (
-                    <div className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-lg shadow-indigo-500/50" />
+                    <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-indigo-600 shadow-sm" />
                   )}
 
-                  {/* Toggle Indicator on Hover */}
                   <div className="absolute inset-0 bg-indigo-600/0 group-hover:bg-indigo-600/5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
-                     <span className="text-[9px] font-bold text-indigo-400 uppercase tracking-widest bg-[#09090b] px-2 py-1 rounded-md border border-indigo-500/20">
-                        Click to Toggle
+                     <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest bg-white px-3 py-1.5 rounded-xl border border-indigo-100 shadow-sm">
+                        Toggle
                      </span>
                   </div>
                 </div>
@@ -189,27 +176,24 @@ function FreelancerAvailability({ userID }: { userID: string }) {
       </div>
 
       {/* Legend */}
-      <div className="flex items-center gap-6 pt-4">
-         <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-md bg-emerald-500/20 border border-emerald-500/30" />
-            <span className="text-xs text-[#71717a] font-medium">Available</span>
+      <div className="flex items-center gap-10">
+         <div className="flex items-center gap-3">
+            <div className="w-4 h-4 rounded bg-green-50 border border-green-100" />
+            <span className="text-[11px] text-gray-500 font-bold uppercase tracking-widest">Available</span>
          </div>
-         <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-md bg-red-500/20 border border-red-500/30" />
-            <span className="text-xs text-[#71717a] font-medium">Unavailable</span>
+         <div className="flex items-center gap-3">
+            <div className="w-4 h-4 rounded bg-red-50 border border-red-100" />
+            <span className="text-[11px] text-gray-500 font-bold uppercase tracking-widest">Unavailable</span>
          </div>
-         <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-indigo-500" />
-            <span className="text-xs text-[#71717a] font-medium">Has Comment</span>
+         <div className="flex items-center gap-3">
+            <div className="w-2 h-2 rounded-full bg-indigo-600" />
+            <span className="text-[11px] text-gray-500 font-bold uppercase tracking-widest">Modified / Comment</span>
          </div>
       </div>
     </div>
   );
 }
 
-/**
- * Admin View: Real-time team availability grid with today's focus and lookup.
- */
 function AdminAvailabilityView() {
   const [todayRecords, setTodayRecords] = useState<AvailabilityRecord[]>([]);
   const [allUsers, setAllUsers] = useState<any[]>([]);
@@ -234,73 +218,67 @@ function AdminAvailabilityView() {
     try {
       const data = await fetchWeekAvailability(userId, 7);
       setUserWeek(data);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoadingWeek(false);
-    }
+    } catch (err) { console.error(err); }
+    finally { setLoadingWeek(false); }
   };
 
-  if (loading) return <div className="h-full flex items-center justify-center bg-[#09090b]"><LoadingSpinner size="lg" /></div>;
+  if (loading) return <div className="h-full flex items-center justify-center bg-white"><LoadingSpinner size="lg" /></div>;
 
   return (
-    <div className="flex flex-col gap-8 p-8 h-full overflow-y-auto custom-scrollbar bg-[#09090b]">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-3xl font-bold text-[#fafafa] tracking-tight">Team Visibility</h1>
-        <p className="text-[#71717a] text-sm max-w-2xl leading-relaxed">
+    <div className="flex flex-col gap-10 p-10 h-full overflow-y-auto custom-scrollbar bg-white">
+      <div className="flex flex-col gap-2">
+        <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Team Visibility</h1>
+        <p className="text-gray-400 text-[13px] font-medium max-w-2xl leading-relaxed">
           Real-time workload and availability status across all active freelancers.
         </p>
       </div>
 
       {/* Today's Grid */}
-      <div className="flex flex-col gap-4">
-        <h2 className="text-[11px] font-bold text-[#71717a] uppercase tracking-[0.2em]">Live Today</h2>
-        <div className="grid gap-3">
+      <div className="flex flex-col gap-5">
+        <h2 className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.2em]">Live Today</h2>
+        <div className="grid gap-4">
           {allUsers.length === 0 ? (
-            <div className="p-12 text-center border border-dashed border-[#27272a] rounded-2xl">
-               <p className="text-[#71717a] text-sm font-medium">No freelancers found in roster.</p>
+            <div className="p-12 text-center border-2 border-dashed border-gray-100 rounded-3xl">
+               <p className="text-gray-400 text-sm font-medium">No freelancers found in roster.</p>
             </div>
           ) : allUsers.map(user => {
             const userToday = todayRecords.filter(r => r.user_id === user.id);
+            const isAnyAvail = userToday.some(r => r.is_available);
             return (
               <div 
                 key={user.id} 
                 onClick={() => handleLookup(user.id)}
-                className={`group flex items-center justify-between p-5 rounded-2xl border transition-all cursor-pointer shadow-sm ${
-                  selectedUser === user.id ? 'bg-[#4f46e5]/10 border-[#4f46e5]/30' : 'bg-[#18181b] border-[#27272a] hover:border-[#3f3f46]'
+                className={`group flex items-center justify-between p-6 rounded-3xl border transition-all cursor-pointer shadow-sm ${
+                  selectedUser === user.id ? 'bg-indigo-50/30 border-indigo-200' : 'bg-white border-gray-200 hover:border-indigo-400'
                 }`}
               >
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-5">
                   <div className="relative">
-                    {user.avatar_url ? (
-                       <img src={user.avatar_url} className="w-12 h-12 rounded-lg object-cover border border-[#27272a]" />
-                    ) : (
-                       <div className="w-12 h-12 rounded-lg bg-[#27272a] text-[#fafafa] flex items-center justify-center font-bold text-lg border border-[#3f3f46]">
-                         {user.name[0]}
-                       </div>
-                    )}
-                    <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-[#18181b] ${userToday.some(r => r.is_available) ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]' : 'bg-[#3f3f46]'}`} />
+                    <div className="w-12 h-12 rounded-2xl bg-gray-50 border border-gray-200 flex items-center justify-center font-bold text-gray-700 text-lg">
+                      {user.name[0]}
+                    </div>
+                    <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white ${isAnyAvail ? 'bg-green-500' : 'bg-gray-200'}`} />
                   </div>
                   <div>
-                    <div className="text-[15px] font-bold text-[#fafafa] tracking-tight group-hover:text-[#4f46e5] transition-colors">{user.name}</div>
-                    <div className="text-[10px] text-[#71717a] font-bold tracking-widest uppercase mt-0.5">{user.id.slice(0,8)}</div>
+                    <div className="text-[16px] font-bold text-gray-900 tracking-tight group-hover:text-indigo-600 transition-colors">{user.name}</div>
+                    <div className="text-[10px] text-gray-400 font-bold tracking-widest uppercase mt-0.5">Freelancer</div>
                   </div>
                 </div>
 
-                <div className="flex gap-8">
+                <div className="flex gap-10">
                   {TIME_SLOTS.map(slotMeta => {
                     const record = userToday.find(r => r.slot === slotMeta.id);
-                    const isAvail = record?.is_available ?? true; // Default to true if no record
+                    const isAvail = record?.is_available ?? true;
                     return (
-                      <div key={slotMeta.id} className="flex flex-col items-center gap-1.5">
-                        <span className="text-[10px] font-bold text-[#52525b] uppercase tracking-widest">{slotMeta.label}</span>
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-                          isAvail ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'
+                      <div key={slotMeta.id} className="flex flex-col items-center gap-2">
+                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{slotMeta.label}</span>
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all border ${
+                          isAvail ? 'bg-green-50 text-green-600 border-green-100' : 'bg-red-50 text-red-500 border-red-100'
                         }`}>
                           {isAvail ? (
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7"/></svg>
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7"/></svg>
                           ) : (
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12"/></svg>
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12"/></svg>
                           )}
                         </div>
                       </div>
@@ -315,21 +293,24 @@ function AdminAvailabilityView() {
 
       {/* Week Lookup */}
       {selectedUser && (
-        <div className="flex flex-col gap-6 pt-8 border-t border-[#27272a] animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="flex flex-col gap-8 pt-10 border-t border-gray-100 fade-in">
            <div className="flex items-center justify-between">
-              <h2 className="text-[11px] font-bold text-[#71717a] uppercase tracking-[0.2em]">Weekly Planner: {allUsers.find(u=>u.id===selectedUser)?.name}</h2>
-              <button onClick={() => setSelectedUser(null)} className="text-[#71717a] hover:text-[#fafafa] text-[10px] font-bold uppercase tracking-widest bg-[#18181b] border border-[#27272a] px-3 py-1.5 rounded-lg transition-all">Close View</button>
+              <div className="flex flex-col gap-1">
+                <h2 className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.2em]">Weekly Planner</h2>
+                <span className="text-lg font-bold text-gray-900">{allUsers.find(u=>u.id===selectedUser)?.name}</span>
+              </div>
+              <button onClick={() => setSelectedUser(null)} className="text-gray-400 hover:text-gray-900 text-[11px] font-bold uppercase tracking-widest bg-gray-50 border border-gray-200 px-5 py-2.5 rounded-xl transition-all">Close Viewer</button>
            </div>
 
            {loadingWeek ? (
               <div className="py-20 flex justify-center"><LoadingSpinner size="lg" /></div>
            ) : (
-              <div className="grid md:grid-cols-4 lg:grid-cols-7 gap-3">
+              <div className="grid md:grid-cols-4 lg:grid-cols-7 gap-4">
                  {userWeek?.days.map(day => (
-                    <div key={day.date} className="bg-[#18181b] border border-[#27272a] rounded-2xl p-4 flex flex-col gap-4 shadow-sm">
-                       <div className="text-center pb-3 border-b border-[#27272a]">
-                          <div className="text-[11px] font-bold text-[#fafafa] uppercase tracking-widest">{new Date(day.date).toLocaleDateString(undefined, { weekday: 'short' })}</div>
-                          <div className="text-[10px] text-[#71717a] font-mono mt-0.5 uppercase">{day.date.split('-').slice(1).join('/')}</div>
+                    <div key={day.date} className="bg-white border border-gray-200 rounded-3xl p-5 flex flex-col gap-5 shadow-sm">
+                       <div className="text-center pb-4 border-b border-gray-50">
+                          <div className="text-[12px] font-bold text-gray-900 uppercase tracking-widest">{new Date(day.date).toLocaleDateString(undefined, { weekday: 'short' })}</div>
+                          <div className="text-[10px] text-gray-400 font-bold mt-1 uppercase">{day.date.split('-').slice(1).join('/')}</div>
                        </div>
                        <div className="flex flex-col gap-3">
                           {TIME_SLOTS.map(slotMeta => {
@@ -337,15 +318,15 @@ function AdminAvailabilityView() {
                              const isAvail = slot?.is_available ?? true;
                              return (
                                 <div key={slotMeta.id} className="group relative">
-                                   <div className={`w-full h-10 rounded-xl flex items-center justify-center transition-all ${
-                                      isAvail ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/10' : 'bg-rose-500/10 text-rose-500 border border-rose-500/10'
+                                   <div className={`w-full h-11 rounded-xl flex items-center justify-center transition-all border ${
+                                      isAvail ? 'bg-green-50/50 text-green-600 border-green-100' : 'bg-red-50/50 text-red-500 border-red-100'
                                    }`}>
-                                      <span className="text-[9px] font-bold uppercase tracking-widest">{slotMeta.label}</span>
+                                      <span className="text-[10px] font-bold uppercase tracking-widest">{slotMeta.label}</span>
                                    </div>
                                    {slot?.comment && (
-                                      <div className="absolute left-1/2 -top-2 -translate-x-1/2 -translate-y-full w-48 p-3 bg-[#09090b] border border-[#27272a] rounded-xl shadow-2xl opacity-0 group-hover:opacity-100 transition-all pointer-events-none z-50">
-                                         <p className="text-[10px] text-[#a1a1aa] leading-relaxed italic">"{slot.comment}"</p>
-                                         <div className="absolute left-1/2 bottom-0 -translate-x-1/2 translate-y-1/2 rotate-45 w-2 h-2 bg-[#09090b] border-r border-b border-[#27272a]" />
+                                      <div className="absolute left-1/2 -top-2 -translate-x-1/2 -translate-y-full w-56 p-4 bg-white border border-gray-200 rounded-2xl shadow-2xl opacity-0 group-hover:opacity-100 transition-all pointer-events-none z-50">
+                                         <p className="text-[11px] text-gray-600 leading-relaxed font-medium">"{slot.comment}"</p>
+                                         <div className="absolute left-1/2 bottom-0 -translate-x-1/2 translate-y-1/2 rotate-45 w-2 h-2 bg-white border-r border-b border-gray-200" />
                                       </div>
                                    )}
                                 </div>
@@ -364,10 +345,6 @@ function AdminAvailabilityView() {
 
 export default function AvailabilityPage() {
   const { role, id: userID } = useAuth();
-
-  if (role === 'freelancer') {
-    return <FreelancerAvailability userID={userID} />;
-  }
-
+  if (role === 'freelancer') return <FreelancerAvailability userID={userID} />;
   return <AdminAvailabilityView />;
 }

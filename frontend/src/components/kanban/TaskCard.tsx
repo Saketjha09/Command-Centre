@@ -6,18 +6,25 @@ interface TaskCardProps {
   onClick: () => void
 }
 
-const PRIORITY_COLORS: Record<string, string> = {
-  low: 'bg-[#27272a] text-[#a1a1aa] border-[#3f3f46]',
-  medium: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20',
-  high: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-  urgent: 'bg-rose-500/10 text-rose-400 border-rose-500/20',
+const BRAND_COLORS: Record<string, string> = {
+  master_app: 'bg-indigo-500',
+  supernova_ai: 'bg-emerald-500',
+}
+
+const PRIORITY_THEME: Record<string, { label: string, color: string, bg: string }> = {
+  low: { label: 'LOW', color: 'text-slate-400', bg: 'bg-slate-50' },
+  medium: { label: 'MEDIUM', color: 'text-blue-500', bg: 'bg-blue-50/50' },
+  high: { label: 'HIGH', color: 'text-orange-500', bg: 'bg-orange-50/50' },
+  urgent: { label: 'URGENT', color: 'text-red-500', bg: 'bg-red-50' },
 }
 
 function getDeadlineLabel(deadline: string): string {
-  const days = Math.ceil((new Date(deadline).getTime() - Date.now()) / 86400000)
+  const diff = new Date(deadline).getTime() - Date.now()
+  const days = Math.ceil(diff / 86400000)
   if (days < 0) return `${Math.abs(days)}d late`
   if (days === 0) return 'Today'
-  return `${days}d`
+  if (days === 1) return 'Tomorrow'
+  return `${days} days`
 }
 
 export function TaskCard({ task, isTransitioning, onClick }: TaskCardProps) {
@@ -26,17 +33,15 @@ export function TaskCard({ task, isTransitioning, onClick }: TaskCardProps) {
     e.dataTransfer.effectAllowed = 'move'
     e.dataTransfer.setData('taskId', task.id)
     e.dataTransfer.setData('fromStatus', task.status)
-    setTimeout(() => {
-      if (e.target instanceof HTMLElement) {
-        e.target.classList.add('dragging')
-      }
-    }, 0)
+    e.currentTarget.classList.add('dragging')
   }
 
   const isOverdue = task.deadline && 
     new Date(task.deadline).getTime() < Date.now() && 
     task.status !== 'approved' && 
     task.status !== 'paid'
+
+  const priority = PRIORITY_THEME[task.priority] || PRIORITY_THEME.medium
 
   return (
     <div
@@ -45,57 +50,59 @@ export function TaskCard({ task, isTransitioning, onClick }: TaskCardProps) {
       onDragEnd={e => e.currentTarget.classList.remove('dragging')}
       onClick={onClick}
       className={`
-        group relative flex flex-col gap-2.5 p-3.5 bg-[#18181b] rounded-xl border transition-all duration-300 cursor-grab active:cursor-grabbing shadow-sm
-        ${isOverdue ? 'border-rose-500/30 bg-rose-500/[0.02]' : 'border-[#27272a] hover:border-indigo-500/30'}
-        ${isTransitioning ? 'opacity-40 grayscale pointer-events-none' : 'hover:bg-[#1c1c1f] hover:-translate-y-0.5 hover:shadow-xl hover:shadow-indigo-500/5'}
+        group relative flex flex-col gap-4 p-5 bg-white border border-gray-100 transition-all duration-300 cursor-grab active:cursor-grabbing rounded-3xl shadow-sm
+        ${isOverdue ? 'border-red-100 shadow-red-500/5' : 'hover:border-indigo-200 hover:shadow-xl hover:shadow-indigo-500/5'}
+        ${isTransitioning ? 'opacity-40 grayscale pointer-events-none scale-95' : 'hover:-translate-y-1 active:scale-[0.98]'}
       `}
     >
+      {/* Brand Accent Bar */}
+      <div className={`absolute left-0 top-6 bottom-6 w-1 rounded-r-full transition-all group-hover:w-1.5 ${BRAND_COLORS[task.brand] || 'bg-gray-200'}`} />
+
       {/* Top Row: Brand & Priority */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="px-2 py-0.5 rounded-md bg-[#09090b] border border-[#27272a] text-[9px] font-bold text-[#71717a] uppercase tracking-wider">
-            {task.brand.replace('_', ' ')}
-          </span>
-        </div>
-        <div className={`px-2 py-0.5 rounded-md border text-[8px] font-black uppercase tracking-widest ${PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.medium}`}>
-           {task.priority}
+      <div className="flex items-center justify-between ml-2">
+        <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.15em]">
+          {task.brand.replace('_', ' ')}
+        </span>
+        <div className={`px-2 py-0.5 rounded-full text-[8px] font-black tracking-widest ${priority.bg} ${priority.color}`}>
+           {priority.label}
         </div>
       </div>
 
       {/* Title */}
-      <h4 className="text-[13px] font-bold text-[#fafafa] leading-snug line-clamp-2 group-hover:text-indigo-400 transition-colors">
+      <h4 className="text-[14px] font-bold text-gray-900 leading-tight line-clamp-2 ml-2 group-hover:text-indigo-600 transition-colors">
         {task.title}
       </h4>
 
       {/* Footer: Deadline & Assignee */}
-      <div className="flex items-center justify-between mt-0.5">
+      <div className="flex items-center justify-between mt-1 ml-2">
         <div className="flex items-center gap-2">
            {task.deadline ? (
-             <div className={`flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-tight ${isOverdue ? 'text-rose-400' : 'text-[#52525b]'}`}>
-                <svg className="w-3 h-3 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                {getDeadlineLabel(task.deadline)}
+             <div className="flex items-center gap-1.5">
+                <svg className={`w-3 h-3 ${isOverdue ? 'text-red-500' : 'text-gray-300'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                <span className={`text-[10px] font-bold uppercase tracking-wider ${isOverdue ? 'text-red-500' : 'text-gray-400'}`}>
+                   {getDeadlineLabel(task.deadline)}
+                </span>
              </div>
            ) : (
-             <div className="text-[10px] font-bold text-[#27272a] uppercase">No date</div>
+             <span className="text-[10px] font-bold text-gray-200 uppercase tracking-tighter">No Deadline</span>
            )}
         </div>
 
         {task.assigned_to_name ? (
-           <div className="flex items-center gap-2">
-              <span className="text-[9px] font-bold text-[#52525b] uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity duration-300">{task.assigned_to_name.split(' ')[0]}</span>
-              <div className="w-6 h-6 rounded-full bg-indigo-600 border border-indigo-500 flex items-center justify-center text-[9px] font-black text-white uppercase shadow-lg shadow-indigo-500/20">
+           <div className="flex items-center gap-2 group/assignee">
+              <span className="text-[9px] font-bold text-gray-300 opacity-0 group-hover/assignee:opacity-100 transition-opacity uppercase tracking-tighter">
+                 {task.assigned_to_name.split(' ')[0]}
+              </span>
+              <div className="w-6 h-6 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center text-[10px] font-black text-gray-400 uppercase shadow-sm group-hover/assignee:border-indigo-200 group-hover/assignee:text-indigo-500 transition-all">
                 {task.assigned_to_name[0]}
               </div>
            </div>
         ) : (
-           <div className="w-6 h-6 rounded-full border border-dashed border-[#27272a] flex items-center justify-center">
-              <svg className="w-3 h-3 text-[#3f3f46]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+           <div className="w-6 h-6 rounded-xl border border-dashed border-gray-200 flex items-center justify-center group-hover:border-indigo-200 transition-all">
+              <svg className="w-3 h-3 text-gray-200 group-hover:text-indigo-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
            </div>
         )}
       </div>
-
-      {/* Pulse for Overdue */}
-      {isOverdue && <div className="absolute inset-0 rounded-xl border border-rose-500/20 animate-pulse pointer-events-none" />}
     </div>
   )
 }

@@ -16,6 +16,7 @@ type TaskSummary struct {
 	AssignedTo     *string    `json:"assigned_to,omitempty"`
 	AssignedToName *string    `json:"assigned_to_name,omitempty"`
 	Deadline       *time.Time `json:"deadline,omitempty"`
+	ContentType    string     `json:"content_type"`
 	CreatedAt      time.Time  `json:"created_at"`
 }
 
@@ -30,18 +31,25 @@ type TaskDetail struct {
 	AssignedTo         *string    `json:"assigned_to,omitempty"`
 	CreatedBy          string     `json:"created_by"`
 	Deadline           *time.Time `json:"deadline,omitempty"`
-	NotificationFailed bool       `json:"notification_failed"`
-	CreatedAt          time.Time  `json:"created_at"`
-	UpdatedAt          time.Time  `json:"updated_at"`
+	NotificationFailed   bool       `json:"notification_failed"`
+	GoogleDriveFolderID  *string    `json:"google_drive_folder_id,omitempty"`
+	PayoutAmount         float64    `json:"payout_amount"`
+	SyncFailed           bool       `json:"sync_failed"`
+	ContentType         string     `json:"content_type"`
+	CreatedAt           time.Time  `json:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at"`
 }
 
 // CreateTaskRequest is the body for POST /api/v1/tasks.
 type CreateTaskRequest struct {
-	Title       string     `json:"title"`
-	Description string     `json:"description"`
-	Brand       string     `json:"brand"`
-	Priority    string     `json:"priority"`
-	Deadline    *time.Time `json:"deadline,omitempty"`
+	Title        string     `json:"title"`
+	Description  string     `json:"description"`
+	Brand        string     `json:"brand"`
+	Priority     string     `json:"priority"`
+	Deadline     *time.Time `json:"deadline,omitempty"`
+	PayoutAmount float64    `json:"payout_amount"`
+	ContentType  string     `json:"content_type"`
+	AssignedTo   *string    `json:"assigned_to,omitempty"`
 }
 
 // AssignTaskRequest is the body for PATCH /api/v1/tasks/{id}/assign.
@@ -78,4 +86,14 @@ type SearchResult struct {
 // SearchResponse is the body for GET /api/v1/search.
 type SearchResponse struct {
 	Results []SearchResult `json:"results"`
+}
+
+// DashboardMetricsResponse is the body for GET /api/v1/dashboard/metrics.
+type UserMetrics struct {
+	UserName string         `json:"user_name"`
+	Counts   map[string]int `json:"counts"` // content_type -> count
+}
+
+type DashboardMetricsResponse struct {
+	Metrics []UserMetrics `json:"metrics"`
 }

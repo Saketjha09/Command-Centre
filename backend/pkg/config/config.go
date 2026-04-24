@@ -38,6 +38,17 @@ type Config struct {
 	// GoogleServiceAccountJSON is the base64-encoded service account key.
 	// Optional — if empty, Sheets sync is skipped entirely.
 	GoogleServiceAccountJSON string
+	// SlackSigningSecret is used to verify incoming Slack webhooks.
+	// Required for interactive notifications.
+	SlackSigningSecret string
+
+	// GoogleDriveShareEmail is the email address to share newly created folders with.
+	// Required to make folders visible to human team members.
+	GoogleDriveShareEmail string
+
+	// GoogleDriveParentID is the root folder ID where all task folders are created.
+	GoogleDriveParentID string
+
 	// GOEnv is the operating environment, either "development" or "production".
 	GOEnv string
 
@@ -55,8 +66,11 @@ func Load() (*Config, error) {
 		Port:                     os.Getenv("PORT"),
 		SlackBotToken:            os.Getenv("SLACK_BOT_TOKEN"),
 		SlackChannelID:           os.Getenv("SLACK_CHANNEL_ID"),
+		SlackSigningSecret:       os.Getenv("SLACK_SIGNING_SECRET"),
 		GoogleSheetsID:           os.Getenv("GOOGLE_SHEETS_ID"),
 		GoogleServiceAccountJSON: os.Getenv("GOOGLE_SERVICE_ACCOUNT_JSON"),
+		GoogleDriveShareEmail:    os.Getenv("GOOGLE_DRIVE_SHARE_EMAIL"),
+		GoogleDriveParentID:      os.Getenv("GOOGLE_DRIVE_PARENT_ID"),
 		GOEnv:                    os.Getenv("GO_ENV"),
 		AllowedOrigins:           os.Getenv("ALLOWED_ORIGINS"),
 	}

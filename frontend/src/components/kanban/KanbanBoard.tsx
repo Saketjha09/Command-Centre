@@ -3,6 +3,7 @@ import type { TaskSummary, TaskStatus } from '../../types/task'
 import { TASK_STATUSES } from '../../types/task'
 import { fetchTasks, transitionTaskStatus, createTask, fetchBrands } from '../../services/api'
 import { KanbanColumn } from './KanbanColumn'
+import { TaskListView } from './TaskListView'
 import { TaskDrawer } from './TaskDrawer'
 import { useWS } from '../../context/WebSocketContext'
 import { useAuth } from '../../hooks/useAuth'
@@ -15,6 +16,7 @@ export function KanbanBoard() {
   
   const [tasks, setTasks] = useState<TaskSummary[]>([])
   const [brands, setBrands] = useState<Brand[]>([])
+  const [viewType, setViewType] = useState<'list' | 'board'>('list')
   const [transitioningTaskId, setTransitioningTaskId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -28,8 +30,6 @@ export function KanbanBoard() {
 
   const { lastMessage } = useWS()
   const user = useAuth()
-
-  // ── Data loading ────────────────────────────────────────────────────────────
 
   const loadData = useCallback(async (brand: string) => {
     try {
@@ -52,7 +52,6 @@ export function KanbanBoard() {
     void loadData(brandFilter)
   }, [brandFilter, loadData])
 
-  // ── WS Message Handling ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!lastMessage) return;
     
@@ -79,8 +78,6 @@ export function KanbanBoard() {
     })
   }, [lastMessage, brandFilter, loadData])
 
-  // ── Drag-and-drop with optimistic UI ─────────────────────────────────────────
-
   const handleDrop = useCallback(async (
     taskId: string,
     fromStatus: string,
@@ -103,184 +100,160 @@ export function KanbanBoard() {
       setTasks(prev =>
         prev.map(t => t.id === taskId ? { ...t, status: fromStatus } : t),
       )
-      setError(
-        err instanceof Error
-          ? `Move failed: ${err.message}`
-          : 'Move failed — please try again',
-      )
+      setError(err instanceof Error ? `Move failed: ${err.message}` : 'Move failed')
       setTimeout(() => setError(null), 5000)
     } finally {
       setTransitioningTaskId(null)
     }
   }, [])
 
-  // ── Task Creation with optimistic UI ─────────────────────────────────────────
-
-  const handleCreateTask = async (data: { title: string; brand: string; deadline?: string; status?: string }) => {
-    const tempId = `temp-${Date.now()}`
-    
-    // Add optimistic task
-    const optimisticTask: TaskSummary = {
-      id: tempId,
-      title: data.title,
-      brand: data.brand,
-      status: (data.status as any) || 'brief_pending',
-      assigned_to: '',
-      deadline: data.deadline || '',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    }
-
-    // Only show if it matches filter
-    if (!brandFilter || brandFilter === data.brand) {
-      setTasks(prev => [...prev, optimisticTask])
-    }
-    setIsDrawerOpen(false)
-
+  const handleCreateTask = async (data: any) => {
     try {
       const created = await createTask(data)
-      setTasks(prev => prev.map(t => t.id === tempId ? created : t))
-    } catch (err) {
-      setTasks(prev => prev.filter(t => t.id !== tempId))
-      setError(err instanceof Error ? `Create failed: ${err.message}` : 'Create failed')
-      setTimeout(() => setError(null), 5000)
+      setTasks(prev => [...prev, created])
+      setIsDrawerOpen(false)
+    } catch (err: any) {
+      setError(err.message || 'Create failed')
     }
   }
 
+  const filteredTasks = tasks.filter(t => {
+    if (searchQuery && !t.title.toLowerCase().includes(searchQuery.toLowerCase())) return false
+    if (assignedToMe && user?.id && t.assigned_to !== user.id) return false
+    return true
+  })
+
   const tasksByStatus = TASK_STATUSES.reduce<Record<string, TaskSummary[]>>(
     (acc, s) => {
-      // client-side search & assign filter
-      let filtered = tasks.filter((t) => t.status === s)
-      if (searchQuery) {
-        filtered = filtered.filter(t => t.title.toLowerCase().includes(searchQuery.toLowerCase()))
-      }
-      if (assignedToMe && user?.id) {
-        filtered = filtered.filter(t => t.assigned_to === user.id)
-      }
-      acc[s] = filtered
+      acc[s] = filteredTasks.filter((t) => t.status === s)
       return acc
     },
     {}
   )
 
   return (
-    <div className="relative flex flex-col h-full bg-[#09090b]">
-      {/* Top toolbar */}
-      <div className="flex items-center justify-between px-6 py-4 shrink-0 bg-[#18181b] border-b border-[#27272a]">
-        <div className="flex items-center gap-4">
-          <h2 className="text-lg font-semibold text-[#fafafa]">Board</h2>
-          <div className="px-2.5 py-0.5 rounded-full bg-[#27272a] text-xs font-medium text-[#a1a1aa] border border-[#3f3f46]">
-            {tasks.length} tasks
+    <div className="flex flex-col h-full bg-white">
+      {/* View Switcher & Filters */}
+      <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 bg-gray-50/50">
+        <div className="flex items-center gap-6">
+          <div className="flex items-center bg-gray-200/50 p-1 rounded-lg">
+            <button
+              onClick={() => setViewType('list')}
+              className={`px-3 py-1 text-[11px] font-bold rounded-md transition-all ${
+                viewType === 'list' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              LIST
+            </button>
+            <button
+              onClick={() => setViewType('board')}
+              className={`px-3 py-1 text-[11px] font-bold rounded-md transition-all ${
+                viewType === 'board' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              BOARD
+            </button>
+          </div>
+
+          <div className="flex items-center gap-1">
+             <button
+               onClick={() => {
+                 const params = new URLSearchParams(searchParams)
+                 params.delete('brand')
+                 setSearchParams(params)
+               }}
+               className={`px-3 py-1 text-[11px] font-bold rounded-md border ${
+                 !brandFilter ? 'bg-white border-gray-300 text-gray-900' : 'bg-transparent border-transparent text-gray-500 hover:text-gray-900'
+               }`}
+             >
+               ALL
+             </button>
+             {brands.map(b => (
+               <button
+                 key={b.id}
+                 onClick={() => {
+                   const params = new URLSearchParams(searchParams)
+                   params.set('brand', b.slug)
+                   setSearchParams(params)
+                 }}
+                 className={`px-3 py-1 text-[11px] font-bold rounded-md border transition-all ${
+                   brandFilter === b.slug ? 'bg-white border-gray-300 text-gray-900' : 'bg-transparent border-transparent text-gray-500 hover:text-gray-900'
+                 }`}
+               >
+                 {b.name.toUpperCase()}
+               </button>
+             ))}
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Search Input */}
-          <div className="relative">
-            <svg className="w-4 h-4 text-[#71717a] absolute left-3 top-1/2 -translate-y-1/2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input 
-              type="text" 
-              placeholder="Search tasks..." 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onClick={(e) => e.stopPropagation()}
-              className="bg-[#09090b] border border-[#27272a] rounded-lg pl-9 pr-3 py-1.5 text-xs text-[#fafafa] placeholder-[#71717a] focus:outline-none focus:border-[#4f46e5] w-48 z-10 relative pointer-events-auto transition-all"
-            />
-          </div>
+           <div className="relative">
+             <svg className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+             </svg>
+             <input 
+               type="text" 
+               placeholder="Search projects..." 
+               value={searchQuery}
+               onChange={(e) => setSearchQuery(e.target.value)}
+               className="bg-white border border-gray-200 rounded-md pl-9 pr-3 py-1.5 text-xs text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 w-48 transition-all"
+             />
+           </div>
 
-          {/* Assigned to me */}
-          <button
-            onClick={() => setAssignedToMe(!assignedToMe)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${
-              assignedToMe
-                ? 'bg-[#4f46e5] text-white border-[#4f46e5] shadow-lg shadow-indigo-500/20'
-                : 'bg-transparent text-[#a1a1aa] border-[#27272a] hover:text-[#fafafa] hover:bg-[#27272a]'
-            }`}
-          >
-            Assigned to me
-          </button>
-
-          {/* Brand Filters */}
-          <div className="flex items-center gap-1 bg-[#09090b] rounded-lg p-1 border border-[#27272a] overflow-x-auto max-w-md no-scrollbar">
-            <button
-              onClick={() => {
-                const params = new URLSearchParams(searchParams)
-                params.delete('brand')
-                setSearchParams(params)
-              }}
-              className={`px-3 py-1 rounded-md text-xs font-semibold whitespace-nowrap transition-all duration-150 ${
-                !brandFilter
-                  ? 'bg-[#27272a] text-white border border-[#3f3f46]'
-                  : 'bg-transparent text-[#a1a1aa] hover:text-[#fafafa]'
-              }`}
-            >
-              All Brands
-            </button>
-            {brands.map(b => (
-              <button
-                key={b.id}
-                onClick={() => {
-                  const params = new URLSearchParams(searchParams)
-                  params.set('brand', b.slug)
-                  setSearchParams(params)
-                }}
-                className={`px-3 py-1 rounded-md text-xs font-semibold whitespace-nowrap transition-all duration-150 ${
-                  brandFilter === b.slug
-                    ? 'text-white border border-white/20'
-                    : 'bg-transparent text-[#a1a1aa] hover:text-[#fafafa]'
-                }`}
-                style={brandFilter === b.slug ? { backgroundColor: b.hex_color } : {}}
-              >
-                {b.name}
-              </button>
-            ))}
-          </div>
+           <button
+             onClick={() => setAssignedToMe(!assignedToMe)}
+             className={`px-3 py-1.5 rounded-md text-[11px] font-bold border transition-all ${
+               assignedToMe ? 'bg-indigo-50 border-indigo-200 text-indigo-600' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+             }`}
+           >
+             MY TASKS
+           </button>
         </div>
       </div>
 
-      {/* Columns */}
-      <div className="flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar px-6 py-6">
-        {isLoading ? (
-          <div className="flex items-center justify-center h-full text-slate-500 gap-3">
-            <div className="w-5 h-5 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin" />
-            <span>Loading tasks…</span>
-          </div>
-        ) : (
-          <div className="flex gap-4 h-full w-full">
-            {TASK_STATUSES.map(status => (
-              <KanbanColumn
-                key={status}
-                status={status}
-                tasks={tasksByStatus[status] ?? []}
-                transitioningTaskId={transitioningTaskId}
-                onDrop={handleDrop}
-                onTaskClick={(taskId) => {
-                  setSelectedTaskId(taskId)
-                  setIsDrawerOpen(true)
-                }}
-                onAdd={() => {
-                  setSelectedTaskId(null)
-                  setDrawerInitialStatus(status)
-                  setIsDrawerOpen(true)
-                }}
-               />
-            ))}
-          </div>
-        )}
-      </div>
+      {/* Main Content */}
+      {viewType === 'list' ? (
+        <TaskListView 
+          tasks={filteredTasks} 
+          loading={isLoading} 
+          onTaskClick={(id) => {
+            setSelectedTaskId(id)
+            setIsDrawerOpen(true)
+          }}
+        />
+      ) : (
+        <div className="flex-1 overflow-x-auto p-6 bg-gray-50/30">
+          {isLoading ? (
+            <div className="flex items-center justify-center h-full"><LoadingSpinner size="lg" /></div>
+          ) : (
+            <div className="flex gap-4 h-full">
+              {TASK_STATUSES.map(status => (
+                <KanbanColumn
+                  key={status}
+                  status={status}
+                  tasks={tasksByStatus[status] || []}
+                  transitioningTaskId={transitioningTaskId}
+                  onDrop={handleDrop}
+                  onTaskClick={(id) => {
+                    setSelectedTaskId(id)
+                    setIsDrawerOpen(true)
+                  }}
+                  onAdd={() => {
+                    setSelectedTaskId(null)
+                    setDrawerInitialStatus(status)
+                    setIsDrawerOpen(true)
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
-      {/* Error toast */}
+      {/* Error Toast */}
       {error && (
-        <div className="absolute bottom-6 right-6 fade-in flex items-center justify-between min-w-[300px] px-4 py-3 rounded-xl bg-[#161b22] border border-red-500/20 shadow-pop text-sm font-medium z-50">
-          <div className="flex items-center gap-3">
-            <div className="w-2 h-2 rounded-full bg-red-400 shrink-0" />
-            <span className="text-red-200">{error}</span>
-          </div>
-          <button onClick={() => setError(null)} className="text-slate-500 hover:text-slate-300 p-1">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
-          </button>
+        <div className="fixed bottom-6 right-6 px-4 py-3 bg-red-600 text-white rounded-lg shadow-xl text-xs font-bold z-[100] animate-in slide-in-from-right-full">
+          {error}
         </div>
       )}
 

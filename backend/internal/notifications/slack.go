@@ -29,7 +29,29 @@ const slackPostMessageURL = "https://slack.com/api/chat.postMessage"
 // slackRequest is the JSON body sent to chat.postMessage.
 type slackRequest struct {
 	Channel string `json:"channel"`
-	Text    string `json:"text"`
+	Text    string `json:"text,omitempty"`
+	Blocks  []Block `json:"blocks,omitempty"`
+}
+
+// Block represents a Slack Block Kit element.
+type Block struct {
+	Type     string      `json:"type"`
+	Text     *TextObject `json:"text,omitempty"`
+	Elements []Element   `json:"elements,omitempty"`
+	BlockID  string      `json:"block_id,omitempty"`
+}
+
+type TextObject struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+type Element struct {
+	Type     string      `json:"type"`
+	ActionID string      `json:"action_id,omitempty"`
+	Text     *TextObject `json:"text,omitempty"`
+	Value    string      `json:"value,omitempty"`
+	Style    string      `json:"style,omitempty"`
 }
 
 // slackResponse is the subset of the Slack API response we inspect.
@@ -49,13 +71,17 @@ func SendChannelMessage(cfg *config.Config, message string) error {
 	return postMessage(cfg, cfg.SlackChannelID, message)
 }
 
-// postMessage is the shared implementation for DM and channel messages.
-func postMessage(cfg *config.Config, channel, text string) error {
-	body, err := json.Marshal(slackRequest{Channel: channel, Text: text})
+// SendInteractiveMessage sends a message with buttons using Slack Block Kit.
+func SendInteractiveMessage(cfg *config.Config, channel, text string, blocks []Block) error {
+	body, err := json.Marshal(slackRequest{Channel: channel, Text: text, Blocks: blocks})
 	if err != nil {
-		return fmt.Errorf("slack: marshal request: %w", err)
+		return fmt.Errorf("slack: marshal interactive request: %w", err)
 	}
+	return postMessageRaw(cfg, body)
+}
 
+// postMessageRaw is a lower-level helper for sending JSON payloads to Slack.
+func postMessageRaw(cfg *config.Config, body []byte) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -82,6 +108,16 @@ func postMessage(cfg *config.Config, channel, text string) error {
 	}
 	return nil
 }
+
+// postMessage is the shared implementation for DM and channel messages.
+func postMessage(cfg *config.Config, channel, text string) error {
+	body, err := json.Marshal(slackRequest{Channel: channel, Text: text})
+	if err != nil {
+		return fmt.Errorf("slack: marshal request: %w", err)
+	}
+	return postMessageRaw(cfg, body)
+}
+
 
 // standupMessage is the DM body sent to each intern during the morning standup ping.
 const standupMessage = "Good morning! Please reply with your " +

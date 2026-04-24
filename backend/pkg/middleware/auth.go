@@ -28,16 +28,27 @@ type claimsKey struct{}
 func Authenticate(cfg *config.Config) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var token string
 			cookie, err := r.Cookie("access_token")
-			if err != nil {
-				// Missing cookie — unauthenticated request.
+			if err == nil {
+				token = cookie.Value
+			} else {
+				// Fallback to Authorization header
+				authHeader := r.Header.Get("Authorization")
+				if authHeader != "" && len(authHeader) > 7 && authHeader[:7] == "Bearer " {
+					token = authHeader[7:]
+				}
+			}
+
+			if token == "" {
+				// Missing credentials — unauthenticated request.
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnauthorized)
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": "authentication required"})
 				return
 			}
 
-			claims, err := auth.ValidateAccessToken(cfg, cookie.Value)
+			claims, err := auth.ValidateAccessToken(cfg, token)
 			if err != nil {
 				// Token present but invalid or expired.
 				w.Header().Set("Content-Type", "application/json")

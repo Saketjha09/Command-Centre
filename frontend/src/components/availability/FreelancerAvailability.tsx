@@ -88,51 +88,59 @@ export function FreelancerAvailability({ userID, compact = false }: FreelancerAv
     <div className={`flex flex-col gap-6 ${compact ? '' : 'p-2'}`}>
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex flex-col gap-1">
-          <h2 className={`font-bold text-[#fafafa] tracking-tight ${compact ? 'text-xl' : 'text-3xl'}`}>
+          <h2 className={`font-bold text-gray-900 tracking-tight ${compact ? 'text-xl' : 'text-3xl'}`}>
             Weekly Planner
           </h2>
-          <p className="text-[#71717a] text-xs max-w-2xl leading-relaxed">
+          <p className="text-gray-400 text-xs font-medium max-w-2xl leading-relaxed">
             Click cells to toggle your availability. Ready = Available, Busy = Unavailable.
           </p>
         </div>
         <button 
           onClick={handleSaveAll}
           disabled={isSaving}
-          className="flex items-center gap-2 px-5 py-2 rounded-xl bg-[#4f46e5] hover:bg-[#6366f1] disabled:opacity-50 text-white text-xs font-bold transition-all shadow-lg shadow-indigo-500/20 active:scale-95 shrink-0"
+          className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-[11px] font-bold transition-all shadow-lg shadow-indigo-100 active:scale-95 shrink-0"
         >
-          {isSaving ? <LoadingSpinner size="sm" /> : 'Save Plan'}
+          {isSaving ? <LoadingSpinner size="sm" /> : (
+            <>
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+              Save Weekly Plan
+            </>
+          )}
         </button>
       </div>
 
       {(error || success) && (
-        <div className={`px-4 py-2.5 rounded-xl border text-xs font-medium animate-in fade-in slide-in-from-top-2 duration-300 ${
-          error ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+        <div className={`px-4 py-3 rounded-2xl border text-[11px] font-bold uppercase tracking-widest animate-in fade-in slide-in-from-top-2 duration-300 ${
+          error ? 'bg-red-50 border-red-100 text-red-600' : 'bg-emerald-50 border-emerald-100 text-emerald-600'
         }`}>
-          {error || success}
+          <div className="flex items-center gap-3">
+             <div className={`w-1.5 h-1.5 rounded-full ${error ? 'bg-red-500' : 'bg-emerald-500'}`} />
+             {error || success}
+          </div>
         </div>
       )}
 
-      <div className="bg-[#18181b] border border-[#27272a] rounded-2xl overflow-hidden shadow-xl overflow-x-auto">
+      <div className="bg-white border border-gray-200 rounded-3xl overflow-hidden shadow-sm overflow-x-auto">
         <div className="min-w-[700px]">
-          <div className="grid grid-cols-8 border-b border-[#27272a]">
-            <div className="p-3 bg-[#18181b] border-r border-[#27272a] flex items-center justify-center">
-               <span className="text-[9px] font-bold text-[#52525b] uppercase tracking-widest">Time</span>
+          <div className="grid grid-cols-8 border-b border-gray-100">
+            <div className="p-4 bg-gray-50/50 border-r border-gray-100 flex items-center justify-center">
+               <span className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em]">Time Slots</span>
             </div>
             {weekData?.days.map(day => (
-              <div key={day.date} className="p-3 flex flex-col items-center justify-center border-r border-[#27272a] last:border-r-0 bg-[#18181b]">
-                <span className="text-[10px] font-bold text-[#fafafa] uppercase tracking-wider">
+              <div key={day.date} className="p-4 flex flex-col items-center justify-center border-r border-gray-100 last:border-r-0 bg-gray-50/50">
+                <span className="text-[11px] font-bold text-gray-900 uppercase tracking-widest">
                   {new Date(day.date).toLocaleDateString(undefined, { weekday: 'short' })}
                 </span>
-                <span className="text-[9px] font-mono text-[#52525b] mt-0.5">{day.date.split('-').slice(1).join('/')}</span>
+                <span className="text-[10px] font-bold text-gray-400 mt-1 uppercase">{day.date.split('-').slice(1).join('/')}</span>
               </div>
             ))}
           </div>
 
           {TIME_SLOTS.map(slotMeta => (
-            <div key={slotMeta.id} className="grid grid-cols-8 border-b border-[#27272a] last:border-b-0">
-              <div className="p-3 bg-[#18181b] border-r border-[#27272a] flex flex-col items-center justify-center text-center">
-                <span className="text-[10px] font-bold text-[#fafafa] uppercase">{slotMeta.label}</span>
-                <span className="text-[8px] text-[#52525b] font-medium mt-0.5 uppercase tracking-tighter">{slotMeta.time}</span>
+            <div key={slotMeta.id} className="grid grid-cols-8 border-b border-gray-100 last:border-b-0">
+              <div className="p-4 bg-gray-50/50 border-r border-gray-100 flex flex-col items-center justify-center text-center">
+                <span className="text-[11px] font-bold text-gray-900 uppercase tracking-widest">{slotMeta.label}</span>
+                <span className="text-[9px] text-gray-400 font-bold mt-1 uppercase tracking-tighter">{slotMeta.time}</span>
               </div>
 
               {weekData?.days.map(day => {
@@ -145,22 +153,23 @@ export function FreelancerAvailability({ userID, compact = false }: FreelancerAv
                   <div 
                     key={`${day.date}-${slotMeta.id}`} 
                     onClick={() => toggleSlot(day.date, slotMeta.id)}
-                    className={`relative p-1.5 h-16 border-r border-[#27272a] last:border-r-0 cursor-pointer transition-all group overflow-hidden ${
+                    className={`relative p-2 h-20 border-r border-gray-100 last:border-r-0 cursor-pointer transition-all group overflow-hidden ${
                       slot.is_available 
-                        ? 'bg-emerald-500/5 hover:bg-emerald-500/10' 
-                        : 'bg-red-500/5 hover:bg-red-500/10'
+                        ? 'bg-emerald-50/5 hover:bg-emerald-50/20' 
+                        : 'bg-red-50/5 hover:bg-red-50/20'
                     }`}
                   >
-                    <div className={`w-full h-full rounded-lg flex flex-col items-center justify-center gap-1 border transition-all duration-300 ${
+                    <div className={`w-full h-full rounded-2xl flex flex-col items-center justify-center gap-1 border transition-all duration-300 ${
                       slot.is_available 
-                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' 
-                        : 'bg-red-500/10 border-red-500/20 text-red-400 opacity-60'
+                        ? 'bg-emerald-50 border-emerald-100 text-emerald-600' 
+                        : 'bg-red-50 border-red-100 text-red-500 opacity-40'
                     }`}>
                       {slot.is_available ? (
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7"/></svg>
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7"/></svg>
                       ) : (
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12"/></svg>
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12"/></svg>
                       )}
+                      <span className="text-[9px] font-black uppercase tracking-widest">{slot.is_available ? 'READY' : 'BUSY'}</span>
                     </div>
                   </div>
                 );

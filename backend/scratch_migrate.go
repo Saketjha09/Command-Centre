@@ -24,7 +24,7 @@ func main() {
 	}
 	defer conn.Close(ctx)
 
-	migration, err := os.ReadFile("db/migrations/003_task_details.sql")
+	migration, err := os.ReadFile("db/migrations/008_task_content_type.sql")
 	if err != nil {
 		log.Fatalf("Unable to read migration file: %v", err)
 	}
@@ -34,5 +34,5 @@ func main() {
 		log.Fatalf("Migration failed: %v", err)
 	}
 
-	fmt.Println("Migration 003 applied successfully!")
+	fmt.Println("Migration 008 applied successfully!")
 }

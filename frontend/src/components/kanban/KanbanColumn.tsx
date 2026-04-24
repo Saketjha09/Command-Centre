@@ -12,12 +12,12 @@ interface KanbanColumnProps {
   onAdd: () => void
 }
 
-const STATUS_ACCENT: Record<string, string> = {
-  brief_pending: 'border-t-zinc-500',
-  in_progress: 'border-t-indigo-500',
-  review: 'border-t-amber-500',
-  approved: 'border-t-emerald-500',
-  paid: 'border-t-blue-500',
+const STATUS_THEME: Record<string, { bg: string, text: string, border: string, ring: string }> = {
+  brief_pending: { bg: 'bg-slate-50', text: 'text-slate-500', border: 'border-slate-200', ring: 'ring-slate-400/10' },
+  in_progress: { bg: 'bg-indigo-50/50', text: 'text-indigo-600', border: 'border-indigo-100', ring: 'ring-indigo-500/10' },
+  review: { bg: 'bg-amber-50/50', text: 'text-amber-600', border: 'border-amber-100', ring: 'ring-amber-500/10' },
+  approved: { bg: 'bg-emerald-50/50', text: 'text-emerald-600', border: 'border-emerald-100', ring: 'ring-emerald-500/10' },
+  paid: { bg: 'bg-blue-50/50', text: 'text-blue-600', border: 'border-blue-100', ring: 'ring-blue-500/10' },
 }
 
 export function KanbanColumn({
@@ -52,37 +52,40 @@ export function KanbanColumn({
     }
   }
 
-  const accentColor = STATUS_ACCENT[status] || 'border-t-zinc-500'
+  const theme = STATUS_THEME[status] || STATUS_THEME.brief_pending
 
   return (
     <div
-      className={`flex-1 min-w-[280px] flex flex-col max-h-full rounded-2xl bg-[#18181b]/50 transition-all duration-150 border border-[#27272a] border-t-2 ${accentColor} ${
-        isDragOver ? 'bg-[#27272a]/50' : ''
+      className={`flex-1 min-w-[320px] flex flex-col max-h-full rounded-3xl bg-gray-50/50 border border-gray-100 transition-all duration-300 ${
+        isDragOver ? 'bg-indigo-50/30 border-indigo-200 ring-4 ring-indigo-500/5 shadow-inner scale-[1.01]' : ''
       }`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
       {/* Column header */}
-      <div className="flex items-center justify-between px-4 py-4">
-        <div className="flex items-center gap-2.5">
-          <span className="text-[11px] tracking-widest uppercase font-bold text-[#71717a]">
-            {STATUS_LABELS[status] ?? status}
-          </span>
-          <span className="text-[10px] font-bold tabular-nums px-2 py-0.5 rounded bg-[#27272a] text-[#a1a1aa] border border-[#3f3f46]">
+      <div className="flex items-center justify-between px-5 py-4 shrink-0">
+        <div className="flex items-center gap-3">
+          <div className={`flex items-center gap-2 px-3 py-1 rounded-full border shadow-sm ${theme.bg} ${theme.border}`}>
+            <div className={`w-1.5 h-1.5 rounded-full ${theme.text.replace('text-', 'bg-')}`} />
+            <span className={`text-[10px] font-black uppercase tracking-[0.15em] ${theme.text}`}>
+              {STATUS_LABELS[status] ?? status}
+            </span>
+          </div>
+          <span className="text-[10px] font-bold tabular-nums text-gray-400">
             {tasks.length}
           </span>
         </div>
         <button 
           onClick={onAdd} 
-          className="text-[#71717a] hover:text-[#fafafa] hover:bg-[#27272a] p-1.5 rounded-lg transition-all"
+          className="w-7 h-7 flex items-center justify-center rounded-full bg-white border border-gray-200 text-gray-400 hover:text-indigo-600 hover:border-indigo-200 hover:shadow-sm transition-all active:scale-90"
         >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4"/></svg>
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/></svg>
         </button>
       </div>
 
       {/* Card list */}
-      <div className="flex flex-col gap-2 overflow-y-auto px-2 py-2 flex-1 min-h-[100px]">
+      <div className="flex flex-col gap-3 overflow-y-auto px-4 pb-4 flex-1 min-h-[150px] custom-scrollbar">
         {tasks.map(task => (
           <TaskCard
             key={task.id}
@@ -91,6 +94,12 @@ export function KanbanColumn({
             onClick={() => onTaskClick(task.id)}
           />
         ))}
+        {tasks.length === 0 && !isDragOver && (
+          <div className="flex-1 flex flex-col items-center justify-center py-10 opacity-20 grayscale scale-95 transition-all">
+             <svg className="w-12 h-12 text-gray-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+             <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Empty Section</span>
+          </div>
+        )}
       </div>
     </div>
   )

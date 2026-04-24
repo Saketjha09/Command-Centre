@@ -82,7 +82,7 @@ export function AvailabilityGrid({ userID, userRole }: AvailabilityGridProps) {
         </div>
       )}
       
-      <div className="flex bg-[#1a1d27] rounded-xl border border-white/5 p-5 overflow-x-auto gap-4 shadow-xl">
+      <div className="flex bg-[#1a1d27] rounded-xl border border-white/5 p-5 overflow-x-auto overflow-y-hidden whitespace-nowrap overscroll-x-contain gap-4 shadow-xl custom-scrollbar">
         {/* Row labels */}
         <div className="flex flex-col justify-end w-20 shrink-0 pb-1">
           <div className="h-12 flex items-center justify-end pr-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Day</div>

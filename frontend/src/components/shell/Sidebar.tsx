@@ -9,14 +9,63 @@ interface SidebarProps {
   onNavigate: (view: string, brand?: string) => void
   collapsed: boolean
   onToggle: () => void
+  onAddMember?: () => void
+  onAddBrand?: () => void
 }
 
-export function Sidebar({ currentView, onNavigate, collapsed, onToggle }: SidebarProps) {
-  const user = useAuth()
+const Icons = {
+  Dashboard: () => (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+    </svg>
+  ),
+  Tasks: () => (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012-2" />
+    </svg>
+  ),
+  Availability: () => (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 002-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+    </svg>
+  ),
+  People: () => (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+    </svg>
+  ),
+  Payroll: () => (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 8c-1.657 0-3 1.343-3 3s1.343 3 3 3 3-1.343 3-3-1.343-3-3-3zM12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zM12 18v-1m0-8V7" />
+    </svg>
+  ),
+  Profile: () => (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+    </svg>
+  ),
+  MyTasks: () => (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+    </svg>
+  ),
+  Logout: () => (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+    </svg>
+  ),
+  Plus: () => (
+    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+    </svg>
+  )
+}
+
+export function Sidebar({ currentView, onNavigate, collapsed, onToggle, onAddMember, onAddBrand }: SidebarProps) {
+  const { role, name, avatar_url, logout } = useAuth()
   const [searchParams] = useSearchParams()
   const currentBrand = searchParams.get('brand') || ''
   
-  const role = (user?.role || 'freelancer') as 'superadmin' | 'admin' | 'freelancer'
   const [brands, setBrands] = useState<Brand[]>([])
   const [counts, setCounts] = useState<Record<string, number>>({})
 
@@ -38,215 +87,193 @@ export function Sidebar({ currentView, onNavigate, collapsed, onToggle }: Sideba
     }
   }, [role])
 
-  const ROLE_NAV: Record<string, {id: string, label: string, icon: string}[]> = {
+  const ROLE_NAV: Record<string, {id: string, label: string, icon: keyof typeof Icons}[]> = {
     superadmin: [
-      { id: 'dashboard', label: 'Dashboard', icon: '📊' },
-      { id: 'board', label: 'Tasks', icon: '📋' },
-      { id: 'availability', label: 'Availability', icon: '📅' },
-      { id: 'people', label: 'Freelancers', icon: '👥' },
-      { id: 'payroll', label: 'Payroll', icon: '💰' },
-      { id: 'profile', label: 'Profile', icon: '👤' },
+      { id: 'dashboard', label: 'Dashboard', icon: 'Dashboard' },
+      { id: 'board', label: 'Projects', icon: 'Tasks' },
+      { id: 'availability', label: 'Availability', icon: 'Availability' },
+      { id: 'people', label: 'Freelancers', icon: 'People' },
+      { id: 'payroll', label: 'Payroll', icon: 'Payroll' },
+      { id: 'profile', label: 'Profile', icon: 'Profile' },
     ],
     admin: [
-      { id: 'dashboard', label: 'Dashboard', icon: '📊' },
-      { id: 'board', label: 'Tasks', icon: '📋' },
-      { id: 'availability', label: 'Availability', icon: '📅' },
-      { id: 'people', label: 'Freelancers', icon: '👥' },
-      { id: 'profile', label: 'Profile', icon: '👤' },
+      { id: 'dashboard', label: 'Dashboard', icon: 'Dashboard' },
+      { id: 'board', label: 'Projects', icon: 'Tasks' },
+      { id: 'availability', label: 'Availability', icon: 'Availability' },
+      { id: 'people', label: 'Freelancers', icon: 'People' },
+      { id: 'profile', label: 'Profile', icon: 'Profile' },
     ],
     freelancer: [
-      { id: 'mytasks', label: 'My Tasks', icon: '✅' },
-      { id: 'availability', label: 'Availability', icon: '📅' },
-      { id: 'profile', label: 'Profile', icon: '👤' },
+      { id: 'mytasks', label: 'My Tasks', icon: 'MyTasks' },
+      { id: 'availability', label: 'Availability', icon: 'Availability' },
+      { id: 'profile', label: 'Profile', icon: 'Profile' },
     ]
   }
 
   const items = ROLE_NAV[role] || ROLE_NAV.freelancer
 
   return (
-    <aside style={{
-      width: collapsed ? '64px' : '240px',
-      background: '#09090b', // zinc-950
-      borderRight: '1px solid #18181b', // zinc-900
-      display: 'flex',
-      flexDirection: 'column',
-      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-      overflow: 'hidden',
-    }}>
-      {/* Header */}
-      <div style={{
-        height: '64px',
-        display: 'flex',
-        alignItems: 'center',
-        padding: collapsed ? '0' : '0 24px',
-        justifyContent: collapsed ? 'center' : 'space-between',
-      }}>
+    <aside className={`flex flex-col border-r border-gray-200 bg-gray-50/50 transition-all duration-300 overflow-hidden ${collapsed ? 'w-18' : 'w-[260px]'}`}>
+      {/* Premium Header */}
+      <div className={`h-16 flex items-center px-5 border-b border-gray-100 ${collapsed ? 'justify-center' : 'justify-between'}`}>
         {!collapsed && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{
-              width: '28px', height: '28px',
-              background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
-              borderRadius: '8px',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: 'white', fontWeight: '900', fontSize: '14px',
-              boxShadow: '0 4px 12px rgba(79, 70, 229, 0.3)'
-            }}>
-              F
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M13 10V3L4 14h7v7l9-11h-7z" />
+               </svg>
             </div>
-            <span style={{ fontSize: '15px', fontWeight: 700, color: '#fafafa', letterSpacing: '-0.02em' }}>
-              Command
+            <span className="text-[14px] font-black text-gray-900 tracking-tight uppercase tracking-widest">
+              Operator
             </span>
           </div>
         )}
         <button
           onClick={onToggle}
-          style={{
-            background: 'none', border: 'none',
-            color: '#52525b', cursor: 'pointer',
-            padding: '8px',
-            borderRadius: '8px',
-            transition: 'all 0.2s',
-          }}
-          className="hover:bg-[#18181b] hover:text-[#fafafa]"
+          className="p-2 rounded-xl text-gray-400 hover:bg-white hover:text-indigo-600 hover:shadow-sm transition-all"
         >
           {collapsed ? (
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" /></svg>
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7" /></svg>
           ) : (
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" /></svg>
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" /></svg>
           )}
         </button>
       </div>
 
-      {/* Main Nav */}
-      <div style={{ padding: '20px 12px', flex: 1, overflowY: 'auto' }} className="custom-scrollbar">
-        {!collapsed && (
-          <div style={{
-            fontSize: '10px',
-            fontWeight: 800,
-            color: '#3f3f46',
-            marginBottom: '12px',
-            paddingLeft: '12px',
-            textTransform: 'uppercase',
-            letterSpacing: '0.15em'
-          }}>
-            Main Menu
-          </div>
-        )}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-          {items.map(item => {
-            const active = currentView === item.id && (item.id !== 'board' || !currentBrand)
-            return (
-              <button
-                key={item.id}
-                onClick={() => onNavigate(item.id, '')}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  padding: collapsed ? '12px' : '10px 12px',
-                  justifyContent: collapsed ? 'center' : 'flex-start',
-                  background: active ? '#18181b' : 'transparent',
-                  border: 'none',
-                  borderLeft: active ? '3px solid #4f46e5' : '3px solid transparent',
-                  borderRadius: collapsed ? '12px' : '0 8px 8px 0',
-                  marginLeft: collapsed ? '0' : '-12px',
-                  paddingLeft: collapsed ? '12px' : '21px',
-                  color: active ? '#fafafa' : '#71717a',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                  position: 'relative'
-                }}
-                className={active ? '' : 'hover:bg-[#18181b]/50 hover:text-[#a1a1aa]'}
-              >
-                <span style={{ fontSize: '18px', filter: active ? 'none' : 'grayscale(100%) opacity(0.6)' }}>{item.icon}</span>
-                {!collapsed && (
-                  <span style={{ fontSize: '13px', fontWeight: active ? 600 : 500 }}>
-                    {item.label}
-                  </span>
-                )}
-              </button>
-            )
-          })}
-        </div>
-
-        {/* Brands Section */}
-        {!collapsed && (role === 'superadmin' || role === 'admin') && brands.length > 0 && (
-          <div style={{ marginTop: '32px' }}>
-            <div style={{
-              fontSize: '11px',
-              fontWeight: 600,
-              color: '#52525b',
-              marginBottom: '8px',
-              paddingLeft: '8px',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em'
-            }}>
-              Brands
+      {/* Navigation */}
+      <div className="flex-1 overflow-y-auto px-4 py-8 custom-scrollbar space-y-8">
+        {/* Main Nav */}
+        <div>
+          {!collapsed && (
+            <div className="px-4 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">
+              Intelligence
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              {brands.map(b => (
+          )}
+          <div className="space-y-1">
+            {items.map(item => {
+              const active = currentView === item.id && (item.id !== 'board' || !currentBrand)
+              const Icon = Icons[item.icon]
+              return (
                 <button
-                  key={b.id}
-                  onClick={() => onNavigate('board', b.slug)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '12px',
-                    padding: '8px 12px', 
-                    background: currentBrand === b.slug && currentView === 'board' ? '#27272a' : 'none',
-                    border: 'none',
-                    color: currentBrand === b.slug && currentView === 'board' ? '#fafafa' : '#a1a1aa',
-                    cursor: 'pointer', borderRadius: '6px',
-                  }}
-                  onMouseEnter={e => { if (currentBrand !== b.slug) (e.currentTarget as HTMLElement).style.background = '#27272a' }}
-                  onMouseLeave={e => { if (currentBrand !== b.slug) (e.currentTarget as HTMLElement).style.background = 'none' }}
+                  key={item.id}
+                  onClick={() => onNavigate(item.id, '')}
+                  className={`w-full flex items-center gap-3.5 px-4 py-2.5 rounded-xl transition-all duration-200 group relative ${
+                    active ? 'bg-white shadow-md shadow-indigo-500/5 text-indigo-600 border border-gray-100' : 'text-gray-500 hover:bg-white hover:text-gray-900'
+                  } ${collapsed ? 'justify-center' : ''}`}
                 >
-                  <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: b.hex_color }} />
-                  <span style={{ fontSize: '13px', flex: 1, textAlign: 'left', fontWeight: currentBrand === b.slug ? 500 : 400 }}>{b.name}</span>
-                  {counts[b.slug] !== undefined && (
-                    <span style={{ fontSize: '11px', background: '#09090b', padding: '2px 6px', borderRadius: '12px', border: '1px solid #27272a' }}>
-                      {counts[b.slug]}
+                  {active && <div className="absolute left-0 w-1 h-5 bg-indigo-600 rounded-r-full" />}
+                  <span className={`${active ? 'opacity-100' : 'opacity-60 group-hover:opacity-100'}`}>
+                    <Icon />
+                  </span>
+                  {!collapsed && (
+                    <span className={`text-[13px] font-bold tracking-tight`}>
+                      {item.label}
                     </span>
                   )}
                 </button>
-              ))}
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Quick Actions (Admin Only) */}
+        {!collapsed && (role === 'superadmin' || role === 'admin') && (
+           <div>
+              <div className="px-4 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">
+                Operations
+              </div>
+              <div className="space-y-1">
+                 <button 
+                  onClick={onAddMember}
+                  className="w-full flex items-center gap-3.5 px-4 py-2.5 rounded-xl text-emerald-600 hover:bg-emerald-50 transition-all font-bold text-[13px]"
+                 >
+                    <div className="w-6 h-6 rounded-lg bg-emerald-100 flex items-center justify-center">
+                       <Icons.Plus />
+                    </div>
+                    Add Freelancer
+                 </button>
+                 <button 
+                  onClick={onAddBrand}
+                  className="w-full flex items-center gap-3.5 px-4 py-2.5 rounded-xl text-blue-600 hover:bg-blue-50 transition-all font-bold text-[13px]"
+                 >
+                    <div className="w-6 h-6 rounded-lg bg-blue-100 flex items-center justify-center">
+                       <Icons.Plus />
+                    </div>
+                    Add Brand
+                 </button>
+              </div>
+           </div>
+        )}
+
+        {/* Brands Section */}
+        {!collapsed && (role === 'superadmin' || role === 'admin') && brands.length > 0 && (
+          <div>
+            <div className="px-4 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">
+              Directives
+            </div>
+            <div className="space-y-1">
+              {brands.map(b => {
+                const active = currentBrand === b.slug && currentView === 'board'
+                return (
+                  <button
+                    key={b.id}
+                    onClick={() => onNavigate('board', b.slug)}
+                    className={`w-full flex items-center gap-4 px-4 py-2.5 rounded-xl transition-all group ${
+                      active ? 'bg-white shadow-md shadow-gray-200/20 text-gray-900 border border-gray-100' : 'text-gray-500 hover:bg-white hover:text-gray-900'
+                    }`}
+                  >
+                    <div className="w-2 h-2 rounded-full ring-4 ring-white shadow-sm" style={{ backgroundColor: b.hex_color }} />
+                    <span className="text-[13px] font-bold flex-1 text-left tracking-tight">{b.name}</span>
+                    {counts[b.slug] !== undefined && counts[b.slug] > 0 && (
+                      <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black ${active ? 'bg-indigo-50 text-indigo-600' : 'bg-gray-100 text-gray-400 group-hover:bg-indigo-50 group-hover:text-indigo-600'}`}>
+                        {counts[b.slug]}
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
             </div>
           </div>
         )}
       </div>
 
-      {/* User profile footer */}
-      {!collapsed && (
-        <div style={{
-          padding: '16px',
-          borderTop: '1px solid #27272a',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px'
-        }}>
-          <div style={{
-            width: '32px', height: '32px', borderRadius: '50%',
-            background: '#27272a', display: 'flex', alignItems: 'center',
-            justifyContent: 'center', color: '#fafafa', fontSize: '12px', fontWeight: 600,
-            overflow: 'hidden'
-          }}>
-            {user?.avatar_url ? (
+      {/* Premium Profile Footer */}
+      <div className={`p-4 mt-auto border-t border-gray-100 bg-white/40 backdrop-blur-sm ${collapsed ? 'flex flex-col items-center gap-4' : 'flex items-center gap-4'}`}>
+        <div className={`shrink-0 relative ${collapsed ? 'w-10 h-10' : 'w-11 h-11'}`}>
+          <div className="w-full h-full rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 border border-white shadow-md flex items-center justify-center text-[12px] font-black text-white overflow-hidden">
+            {avatar_url ? (
                <img 
-                 src={user.avatar_url.startsWith('http') ? user.avatar_url : `${import.meta.env.VITE_API_URL || 'http://localhost:8080'}${user.avatar_url}`} 
+                 src={avatar_url.startsWith('http') ? avatar_url : `${import.meta.env.VITE_API_URL || 'http://localhost:8080'}${avatar_url}`} 
                  className="w-full h-full object-cover"
                />
             ) : (
-              user?.name?.slice(0, 2).toUpperCase()
+              name?.slice(0, 2).toUpperCase()
             )}
           </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '13px', color: '#fafafa', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {user?.name}
+          <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 border-2 border-white rounded-full shadow-sm" />
+        </div>
+        
+        {!collapsed && (
+          <div className="flex-1 min-w-0">
+            <div className="text-[14px] text-gray-900 font-black truncate tracking-tight">
+              {name}
             </div>
-            <div style={{ fontSize: '11px', color: '#71717a', textTransform: 'capitalize' }}>
+            <div className="text-[9px] text-gray-400 font-black uppercase tracking-widest mt-0.5">
               {role}
             </div>
           </div>
-        </div>
-      )}
+        )}
+
+        <button 
+          onClick={logout}
+          className={`p-2.5 rounded-xl transition-all ${
+            collapsed ? 'text-gray-400 hover:bg-red-50 hover:text-red-600' : 'text-gray-400 hover:bg-red-50 hover:text-red-600 hover:shadow-sm'
+          }`}
+          title="Logout of Operator"
+        >
+          <Icons.Logout />
+        </button>
+      </div>
     </aside>
   )
 }

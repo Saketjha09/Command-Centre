@@ -11,7 +11,7 @@ export async function fetchWeekAvailability(
   if (days !== undefined) params.set('days', days.toString())
   
   const query = params.toString() ? `?${params.toString()}` : ''
-  const res = await fetch(`${BASE_URL}/api/v1/availability/${userID}/week${query}`, defaultOptions)
+  const res = await fetch(`${BASE_URL}/api/v1/availability/${userID}${query}`, defaultOptions)
 
   if (!res.ok) {
     const errorText = await res.text()

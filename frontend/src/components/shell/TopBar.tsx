@@ -2,9 +2,11 @@ interface TopBarProps {
   title: string
   wsStatus: 'connected' | 'connecting' | 'disconnected'
   onNewTask?: () => void
+  onAddMember?: () => void
+  onAddBrand?: () => void
 }
 
-export function TopBar({ title, wsStatus, onNewTask }: TopBarProps) {
+export function TopBar({ title, wsStatus, onNewTask, onAddMember, onAddBrand }: TopBarProps) {
   const dateLabel = new Date().toLocaleDateString('en-US', {
     weekday: 'long',
     month: 'short',
@@ -13,79 +15,62 @@ export function TopBar({ title, wsStatus, onNewTask }: TopBarProps) {
 
   const statusDotClass =
     wsStatus === 'connected'
-      ? 'bg-emerald-400 pulse-live'
+      ? 'bg-emerald-500'
       : wsStatus === 'connecting'
         ? 'bg-amber-400 animate-pulse'
         : 'bg-rose-500'
 
   return (
-    <header className="h-14 shrink-0 border-b border-[#27272a] bg-[#18181b]/95 backdrop-blur-md flex items-center px-6 gap-4 sticky top-0 z-20">
-      <div className="flex items-baseline gap-3">
-        <h1 className="text-[14px] font-bold text-[#fafafa] tracking-tight">{title}</h1>
-        <span className="text-[10px] text-[#71717a] font-mono">{dateLabel}</span>
+    <header className="h-14 shrink-0 border-b border-gray-200 bg-white flex items-center px-6 gap-4 sticky top-0 z-20">
+      <div className="flex items-center gap-3">
+        <h1 className="text-[14px] font-bold text-gray-900 tracking-tight">{title}</h1>
+        <div className="w-px h-4 bg-gray-200 hidden sm:block"></div>
+        <span className="text-[12px] text-gray-400 font-medium hidden sm:block">{dateLabel}</span>
       </div>
-
-      <button
-        type="button"
-        onClick={() => {
-           window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, ctrlKey: true }))
-        }}
-        className="ml-8 flex items-center gap-2.5 px-3 h-8 w-[280px] rounded-lg bg-[#09090b] border border-[#27272a] hover:border-[#3f3f46] hover:bg-[#18181b] transition-all text-[12px] text-[#71717a]"
-      >
-        <SearchIcon className="w-3.5 h-3.5" />
-        <span className="flex-1 text-left">Search or jump to…</span>
-        <span className="kbd !bg-[#27272a] !border-[#3f3f46] !text-[#a1a1aa]">⌘K</span>
-      </button>
 
       <div className="flex-1" />
 
-      <div className="flex items-center gap-2 px-3 h-7 rounded-lg bg-[#09090b] border border-[#27272a]">
-        <span className={`w-1.5 h-1.5 rounded-full ${statusDotClass}`} />
-        <span className="text-[9px] font-bold uppercase tracking-widest text-[#71717a]">{wsStatus}</span>
+      <div className="hidden sm:flex items-center gap-3">
+        {onAddMember && (
+          <button
+            onClick={onAddMember}
+            className="flex items-center gap-2 h-9 px-4 rounded-md bg-white border border-gray-200 text-gray-700 text-[12px] font-bold transition-all active:scale-95 hover:bg-gray-50"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>
+            Add Freelancer
+          </button>
+        )}
+        {onAddBrand && (
+          <button
+            onClick={onAddBrand}
+            className="flex items-center gap-2 h-9 px-4 rounded-md bg-white border border-gray-200 text-gray-700 text-[12px] font-bold transition-all active:scale-95 hover:bg-gray-50"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /></svg>
+            Add Brand
+          </button>
+        )}
       </div>
 
-      <button
-        type="button"
-        className="relative w-8 h-8 rounded-lg border border-[#27272a] bg-[#09090b] hover:bg-[#18181b] flex items-center justify-center text-[#71717a] hover:text-[#fafafa] transition-all"
-      >
-        <BellIcon className="w-4 h-4" />
-        <span className="absolute -top-1 -right-1 min-w-[15px] h-[15px] px-1 rounded-full bg-[#4f46e5] text-[9px] font-bold text-white flex items-center justify-center shadow-lg shadow-indigo-500/20">
-          3
-        </span>
-      </button>
+      <div className="hidden sm:flex items-center gap-2 px-2.5 h-7 rounded-md bg-gray-50 border border-gray-200">
+        <span className={`w-1.5 h-1.5 rounded-full ${statusDotClass}`} />
+        <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">{wsStatus}</span>
+      </div>
 
       <button
         type="button"
         onClick={onNewTask}
-        className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-[#4f46e5] hover:bg-[#6366f1] text-white text-[12px] font-bold shadow-lg shadow-indigo-500/20 transition-all active:scale-95"
+        className="flex items-center gap-2 h-9 px-4 rounded-md bg-indigo-600 text-white text-[12px] font-bold transition-all active:scale-95 hover:bg-indigo-700 shadow-sm shadow-indigo-200"
       >
-        <PlusIcon className="w-3.5 h-3.5" />
-        New task
-        <span className="kbd ml-1 !bg-white/10 !border-white/10 !text-white/70">N</span>
+        <PlusIcon className="w-4 h-4" />
+        New Task
       </button>
     </header>
   )
 }
 
-function SearchIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" />
-    </svg>
-  )
-}
-
-function BellIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.4-1.4A7 7 0 0119 11V8a7 7 0 10-14 0v3a7 7 0 01-.6 4.6L3 17h5m7 0v1a3 3 0 11-6 0v-1m6 0H9" />
-    </svg>
-  )
-}
-
 function PlusIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14m-7-7h14" />
     </svg>
   )

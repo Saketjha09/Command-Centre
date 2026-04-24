@@ -70,8 +70,12 @@ export async function transitionTaskStatus(
  */
 export async function createTask(req: {
   title: string
+  description: string
   brand: string
+  priority: string
   deadline?: string
+  content_type: string
+  assigned_to?: string
 }): Promise<TaskDetail> {
   const res = await fetch(`${BASE_URL}/api/v1/tasks`, {
     ...defaultOptions,
@@ -211,4 +215,13 @@ export async function deleteBrand(id: string): Promise<void> {
     method: 'DELETE'
   })
   if (!res.ok) throw new Error(`deleteBrand: ${res.status}`)
+}
+
+/**
+ * Dashboard metrics
+ */
+export async function fetchDashboardMetrics(): Promise<{ metrics: any[] }> {
+  const res = await fetch(`${BASE_URL}/api/v1/dashboard/metrics`, defaultOptions)
+  if (!res.ok) throw new Error(`fetchDashboardMetrics: ${res.status}`)
+  return res.json()
 }

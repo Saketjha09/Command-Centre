@@ -28,8 +28,6 @@ export function LoginPage({ onGoToRegister }: LoginPageProps) {
     
     try {
       await login({ email, password })
-      // On success, App.tsx will automatically re-evaluate isAuthenticated
-      // and redirect to the protected views. No manual navigate needed.
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed')
       setIsSubmitting(false)
@@ -37,65 +35,65 @@ export function LoginPage({ onGoToRegister }: LoginPageProps) {
   }
 
   return (
-    <div className="flex flex-col items-center justify-center h-screen w-full bg-[#0f1117] px-4 font-sans text-slate-200">
-      <div className="w-full max-w-sm bg-[#1a1d27] rounded-2xl shadow-2xl shadow-indigo-500/10 border border-white/5 overflow-hidden">
+    <div className="flex flex-col items-center justify-center h-screen w-full bg-gray-50 px-4 font-sans text-gray-900">
+      <div className="w-full max-w-sm bg-white rounded-3xl shadow-2xl shadow-indigo-100 border border-gray-100 overflow-hidden">
         
-        <div className="flex flex-col items-center pt-8 pb-4">
-          <div className="w-12 h-12 rounded-xl bg-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-600/30 mb-4">
-            <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+        <div className="flex flex-col items-center pt-10 pb-6">
+          <div className="w-14 h-14 rounded-2xl bg-indigo-600 flex items-center justify-center shadow-xl shadow-indigo-200 mb-5 rotate-3">
+            <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
               <path strokeLinecap="round" strokeLinejoin="round"
                 d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7" />
             </svg>
           </div>
-          <h1 className="text-xl font-bold tracking-tight text-white">Command Center</h1>
-          <p className="text-sm text-slate-400 mt-1">Sign in to your account</p>
+          <h1 className="text-2xl font-black tracking-tight text-gray-900">Command Center</h1>
+          <p className="text-[13px] font-medium text-gray-400 mt-2">Sign in to your dashboard</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="px-8 py-6 space-y-5" noValidate>
+        <form onSubmit={handleSubmit} className="px-10 py-8 space-y-6" noValidate>
           {error && (
-            <div className="p-3 text-sm text-red-300 bg-red-950/50 rounded-lg border border-red-800/50">
+            <div className="p-3.5 text-xs font-bold text-red-600 bg-red-50 rounded-xl border border-red-100">
               {error}
             </div>
           )}
 
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Email</label>
+          <div className="space-y-2">
+            <label className="block text-[10px] font-bold uppercase tracking-[0.1em] text-gray-400">Email Address</label>
             <input
               type="email"
+              placeholder="name@company.com"
               value={email}
               onChange={e => setEmail(e.target.value)}
               disabled={isSubmitting}
-              className={`w-full bg-[#0f1117] border ${validationError && !email ? 'border-red-500' : 'border-white/10'} rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors disabled:opacity-50`}
+              className={`w-full bg-gray-50 border ${validationError && !email ? 'border-red-500' : 'border-gray-200'} rounded-xl px-4 py-3 text-[13px] font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 transition-all disabled:opacity-50`}
             />
-            {validationError && !email && <span className="text-[11px] text-red-400 mt-1 block">Required</span>}
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Password</label>
+          <div className="space-y-2">
+            <label className="block text-[10px] font-bold uppercase tracking-[0.1em] text-gray-400">Password</label>
             <input
               type="password"
+              placeholder="••••••••"
               value={password}
               onChange={e => setPassword(e.target.value)}
               disabled={isSubmitting}
-              className={`w-full bg-[#0f1117] border ${validationError && !password ? 'border-red-500' : 'border-white/10'} rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors disabled:opacity-50`}
+              className={`w-full bg-gray-50 border ${validationError && !password ? 'border-red-500' : 'border-gray-200'} rounded-xl px-4 py-3 text-[13px] font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-600 transition-all disabled:opacity-50`}
             />
-            {validationError && !password && <span className="text-[11px] text-red-400 mt-1 block">Required</span>}
           </div>
 
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full h-11 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-medium rounded-lg flex items-center justify-center transition-colors disabled:opacity-60 mt-2"
+            className="w-full h-12 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white text-[13px] font-bold rounded-xl flex items-center justify-center transition-all disabled:opacity-60 shadow-lg shadow-indigo-200"
           >
             {isSubmitting ? <LoadingSpinner size="sm" /> : 'Sign In'}
           </button>
         </form>
 
-        <div className="px-8 py-4 bg-white/[0.02] border-t border-white/5 text-center">
-          <p className="text-sm text-slate-400">
-            Don't have an account?{' '}
-            <button type="button" onClick={onGoToRegister} className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors">
-              Register
+        <div className="px-10 py-6 bg-gray-50/50 border-t border-gray-100 text-center">
+          <p className="text-[13px] font-medium text-gray-500">
+            Need access?{' '}
+            <button type="button" onClick={onGoToRegister} className="text-indigo-600 hover:underline font-bold transition-colors">
+              Register now
             </button>
           </p>
         </div>

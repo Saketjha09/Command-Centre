@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -11,6 +12,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/saket/command-center/backend/internal/auth"
+	"github.com/saket/command-center/backend/internal/pkg/drive"
+	"github.com/saket/command-center/backend/pkg/config"
 )
 
 // Package-level sentinel errors for the tasks repository.
@@ -35,14 +38,11 @@ const dbTimeout = 5 * time.Second
 
 // detailCols is the explicit column list for full TaskDetail scans.
 // Order must match scanTaskDetail exactly.
-const detailCols = `
-	id, title, description, brand::text, status::text, priority::text,
-	assigned_to, created_by, deadline,
-	notification_failed, created_at, updated_at`
+const detailCols = ` id, title, description, brand, status, priority, assigned_to, created_by, deadline, notification_failed, google_drive_folder_id, payout_amount, sync_failed, content_type, created_at, updated_at `
 
 // summaryCols is the explicit column list for TaskSummary list scans.
 const summaryCols = `
-	t.id, t.title, t.brand, t.status, t.priority, t.assigned_to, t.deadline, t.created_at, u.name as assigned_to_name`
+	t.id, t.title, t.brand, t.status, t.priority, t.assigned_to, t.deadline, t.content_type, t.created_at, u.name as assigned_to_name`
 
 // ── write operations ──────────────────────────────────────────────────────────
 
@@ -50,7 +50,7 @@ const summaryCols = `
 // (defined at the schema level) and returns the full TaskDetail.
 // created_by is required by the schema NOT NULL constraint.
 // CreateTask inserts a new task and logs the creation action.
-func createTask(_ context.Context, pool *pgxpool.Pool, req CreateTaskRequest, createdBy string) (TaskDetail, error) {
+func createTask(_ context.Context, pool *pgxpool.Pool, cfg *config.Config, req CreateTaskRequest, createdBy string) (TaskDetail, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
 
@@ -61,14 +61,26 @@ func createTask(_ context.Context, pool *pgxpool.Pool, req CreateTaskRequest, cr
 	defer tx.Rollback(ctx)
 
 	const q = `
-		INSERT INTO ops.tasks (title, description, brand, priority, deadline, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING ` + detailCols
+		INSERT INTO ops.tasks (title, description, brand, priority, deadline, created_by, payout_amount, content_type, assigned_to)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		RETURNING` + detailCols
 
-	row := tx.QueryRow(ctx, q, req.Title, req.Description, req.Brand, req.Priority, req.Deadline, createdBy)
+	row := tx.QueryRow(ctx, q, req.Title, req.Description, req.Brand, req.Priority, req.Deadline, createdBy, req.PayoutAmount, req.ContentType, req.AssignedTo)
 	detail, err := scanTaskDetail(row)
 	if err != nil {
 		return TaskDetail{}, fmt.Errorf("tasks: create task insert: %w", err)
+	}
+
+	// Google Drive Integration: Generate folder and update task
+	folderID, err := drive.EnsureTaskFolder(cfg, req.Brand, req.Title, detail.ID)
+	if err != nil {
+		log.Printf("tasks: warning: drive folder creation failed: %v", err)
+	} else if folderID != "" {
+		_, err = tx.Exec(ctx, "UPDATE ops.tasks SET google_drive_folder_id = $1 WHERE id = $2", folderID, detail.ID)
+		if err != nil {
+			log.Printf("tasks: warning: failed to update task with drive id: %v", err)
+		}
+		detail.GoogleDriveFolderID = &folderID
 	}
 
 	// Log creation
@@ -180,11 +192,12 @@ func transitionStatus(_ context.Context, pool *pgxpool.Pool, taskID, newStatus, 
 
 // GetTaskByID fetches a single task by its UUID string.
 // Returns ErrTaskNotFound if no row matches.
-func getTaskByID(_ context.Context, pool *pgxpool.Pool, id string) (TaskDetail, error) {
+// RBAC: If claims.Role is freelancer, the task must be assigned to them.
+func getTaskByID(_ context.Context, pool *pgxpool.Pool, id string, claims *auth.TokenClaims) (TaskDetail, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
 
-	const q = `
+	var q = `
 		SELECT` + detailCols + `
 		FROM ops.tasks
 		WHERE id = $1`
@@ -194,7 +207,15 @@ func getTaskByID(_ context.Context, pool *pgxpool.Pool, id string) (TaskDetail, 
 		return TaskDetail{}, fmt.Errorf("tasks: invalid uuid format: %w", err)
 	}
 
-	row := pool.QueryRow(ctx, q, uuidID)
+	args := []any{uuidID}
+
+	// RBAC: Freelancers only see their assigned tasks.
+	if claims != nil && claims.Role == "freelancer" {
+		q += ` AND (assigned_to = $2)`
+		args = append(args, claims.UserID)
+	}
+
+	row := pool.QueryRow(ctx, q, args...)
 	detail, err := scanTaskDetail(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -362,6 +383,53 @@ func searchAll(_ context.Context, pool *pgxpool.Pool, query string) ([]SearchRes
 	return results, nil
 }
 
+// getDashboardMetrics returns the total count of completed tasks grouped by user and content_type.
+func getDashboardMetrics(_ context.Context, pool *pgxpool.Pool) (DashboardMetricsResponse, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+	defer cancel()
+
+	const q = `
+		SELECT u.name, t.content_type::text, COUNT(*)
+		FROM ops.tasks t
+		JOIN ops.users u ON t.assigned_to = u.id
+		WHERE t.status = 'approved' OR t.status = 'paid'
+		GROUP BY u.name, t.content_type
+		ORDER BY u.name, t.content_type`
+
+	rows, err := pool.Query(ctx, q)
+	if err != nil {
+		return DashboardMetricsResponse{}, fmt.Errorf("tasks: metrics query: %w", err)
+	}
+	defer rows.Close()
+
+	userMap := make(map[string]UserMetrics)
+	for rows.Next() {
+		var name, contentType string
+		var count int
+		if err := rows.Scan(&name, &contentType, &count); err != nil {
+			return DashboardMetricsResponse{}, fmt.Errorf("tasks: scan metrics: %w", err)
+		}
+
+		m, ok := userMap[name]
+		if !ok {
+			m = UserMetrics{UserName: name, Counts: make(map[string]int)}
+		}
+		m.Counts[contentType] = count
+		userMap[name] = m
+	}
+
+	var res DashboardMetricsResponse
+	for _, m := range userMap {
+		res.Metrics = append(res.Metrics, m)
+	}
+	// If empty, return [] not null
+	if res.Metrics == nil {
+		res.Metrics = make([]UserMetrics, 0)
+	}
+
+	return res, nil
+}
+
 // ── scan helpers ──────────────────────────────────────────────────────────────
 
 // scanTaskDetail scans a pgx.Row into a TaskDetail.
@@ -377,12 +445,16 @@ func scanTaskDetail(row pgx.Row) (TaskDetail, error) {
 		createdBy          pgtype.UUID
 		deadline           pgtype.Timestamptz
 		notifFailed        bool
+		driveFolderID      pgtype.Text
+		payoutAmount       float64
+		syncFailed         bool
+		contentType        pgtype.Text
 		createdAt, updatedAt time.Time
 	)
 	if err := row.Scan(
 		&id, &title, &description, &brand, &status, &priority,
 		&assignedTo, &createdBy, &deadline,
-		&notifFailed, &createdAt, &updatedAt,
+		&notifFailed, &driveFolderID, &payoutAmount, &syncFailed, &contentType, &createdAt, &updatedAt,
 	); err != nil {
 		return TaskDetail{}, err
 	}
@@ -396,8 +468,14 @@ func scanTaskDetail(row pgx.Row) (TaskDetail, error) {
 		Priority:           priority,
 		CreatedBy:          pgUUIDString(createdBy),
 		NotificationFailed: notifFailed,
+		PayoutAmount:       payoutAmount,
+		SyncFailed:         syncFailed,
+		ContentType:        contentType.String,
 		CreatedAt:          createdAt,
 		UpdatedAt:          updatedAt,
+	}
+	if driveFolderID.Valid {
+		d.GoogleDriveFolderID = &driveFolderID.String
 	}
 	if assignedTo.Valid {
 		s := pgUUIDString(assignedTo)
@@ -417,10 +495,11 @@ func scanTaskSummary(rows pgx.Rows) (TaskSummary, error) {
 		title, brand, status, priority string
 		assignedTo           pgtype.UUID
 		deadline             pgtype.Timestamptz
+		contentType          pgtype.Text
 		createdAt            time.Time
 		assignedToName       pgtype.Text
 	)
-	if err := rows.Scan(&id, &title, &brand, &status, &priority, &assignedTo, &deadline, &createdAt, &assignedToName); err != nil {
+	if err := rows.Scan(&id, &title, &brand, &status, &priority, &assignedTo, &deadline, &contentType, &createdAt, &assignedToName); err != nil {
 		return TaskSummary{}, err
 	}
 	s := TaskSummary{
@@ -429,6 +508,7 @@ func scanTaskSummary(rows pgx.Rows) (TaskSummary, error) {
 		Brand:     brand,
 		Status:    status,
 		Priority:  priority,
+		ContentType: contentType.String,
 		CreatedAt: createdAt,
 	}
 	if assignedTo.Valid {

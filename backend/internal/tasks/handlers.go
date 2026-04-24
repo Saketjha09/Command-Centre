@@ -49,7 +49,7 @@ func HandleCreateTask(pool *pgxpool.Pool, cfg *config.Config, hub WSBroadcaster)
 		}
 
 		// 3. Delegate to service.
-		task, err := CreateTask(pool, claims, req)
+		task, err := CreateTask(pool, cfg, claims, req)
 		if err != nil {
 			switch {
 			case errors.Is(err, ErrValidation):
@@ -100,8 +100,9 @@ func HandleListTasks(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 func HandleGetTask(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
+		claims, _ := middleware.ClaimsFromContext(r.Context())
 
-		task, err := GetTask(pool, id)
+		task, err := GetTask(pool, claims, id)
 		if err != nil {
 			switch {
 			case errors.Is(err, ErrTaskNotFound):
@@ -268,5 +269,18 @@ func HandleSearch(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, SearchResponse{Results: results})
+	}
+}
+
+// HandleDashboardMetrics handles GET /api/v1/dashboard/metrics.
+func HandleDashboardMetrics(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		metrics, err := GetDashboardMetrics(pool)
+		if err != nil {
+			log.Printf("tasks: dashboard metrics: %v", err)
+			writeError(w, http.StatusInternalServerError, "failed to get dashboard metrics")
+			return
+		}
+		writeJSON(w, http.StatusOK, metrics)
 	}
 }

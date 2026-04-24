@@ -56,5 +56,9 @@ func RegisterRoutes(mux *http.ServeMux, pool *pgxpool.Pool, cfg *config.Config, 
 	// Global search — any authenticated user.
 	mux.Handle("GET /api/v1/search",
 		authOnly(http.HandlerFunc(HandleSearch(pool, cfg))))
+
+	// Dashboard metrics — admin and superadmin only.
+	mux.Handle("GET /api/v1/dashboard/metrics",
+		adminOnly(http.HandlerFunc(HandleDashboardMetrics(pool, cfg))))
 }
 

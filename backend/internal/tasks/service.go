@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/saket/command-center/backend/internal/auth"
+	"github.com/saket/command-center/backend/pkg/config"
 )
 
 // ErrValidation marks user-facing validation errors that are safe to
@@ -34,14 +35,14 @@ var validStatuses = map[string]bool{
 
 // CreateTask validates the request, then persists the new task.
 // claims.UserID is used as the created_by FK value (required by schema).
-func CreateTask(pool *pgxpool.Pool, claims *auth.TokenClaims, req CreateTaskRequest) (TaskDetail, error) {
+func CreateTask(pool *pgxpool.Pool, cfg *config.Config, claims *auth.TokenClaims, req CreateTaskRequest) (TaskDetail, error) {
 	if strings.TrimSpace(req.Title) == "" {
 		return TaskDetail{}, fmt.Errorf("%w: title is required", ErrValidation)
 	}
 	if !validBrands[req.Brand] {
 		return TaskDetail{}, fmt.Errorf("%w: brand must be one of: master_app, supernova_ai", ErrValidation)
 	}
-	return createTask(context.Background(), pool, req, claims.UserID)
+	return createTask(context.Background(), pool, cfg, req, claims.UserID)
 }
 
 // ListTasks returns tasks with optional brand/status filters.
@@ -58,11 +59,11 @@ func ListTasks(pool *pgxpool.Pool, claims *auth.TokenClaims, brand, status strin
 
 // GetTask fetches a single task by string UUID.
 // Returns ErrTaskNotFound (from repository) if no task matches.
-func GetTask(pool *pgxpool.Pool, id string) (TaskDetail, error) {
+func GetTask(pool *pgxpool.Pool, claims *auth.TokenClaims, id string) (TaskDetail, error) {
 	if strings.TrimSpace(id) == "" {
 		return TaskDetail{}, fmt.Errorf("%w: task id is required", ErrValidation)
 	}
-	return getTaskByID(context.Background(), pool, id)
+	return getTaskByID(context.Background(), pool, id, claims)
 }
 
 // AssignTask assigns userID to a task. Both taskID and userID must be non-empty.
@@ -106,4 +107,9 @@ func ListTaskHistory(pool *pgxpool.Pool, id string) ([]TaskHistoryEntry, error) 
 // GlobalSearch performs a search across the entire application.
 func GlobalSearch(pool *pgxpool.Pool, query string) ([]SearchResult, error) {
 	return searchAll(context.Background(), pool, query)
+}
+
+// GetDashboardMetrics returns metrics for the dashboard.
+func GetDashboardMetrics(pool *pgxpool.Pool) (DashboardMetricsResponse, error) {
+	return getDashboardMetrics(context.Background(), pool)
 }

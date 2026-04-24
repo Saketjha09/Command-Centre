@@ -50,11 +50,11 @@ export function ProfilePage() {
   if (!user) return null;
 
   return (
-    <div className="flex flex-col h-full bg-[#0d1117] overflow-y-auto">
+    <div className="flex flex-col h-full bg-gray-50 overflow-y-auto">
       <div className="max-w-2xl mx-auto w-full p-8 space-y-8">
         <div className="flex items-center gap-6">
           <div className="relative group">
-            <div className="w-24 h-24 rounded-2xl bg-indigo-600 flex items-center justify-center text-3xl font-bold text-white shadow-xl overflow-hidden border-2 border-white/5">
+            <div className="w-24 h-24 rounded-2xl bg-indigo-600 flex items-center justify-center text-3xl font-bold text-white shadow-xl overflow-hidden border-2 border-white">
               {user.avatar_url ? (
                 <img 
                   src={user.avatar_url.startsWith('https') ? user.avatar_url : `${BASE_URL}${user.avatar_url}`} 
@@ -65,14 +65,14 @@ export function ProfilePage() {
                 user.name.slice(0, 2).toUpperCase()
               )}
               {isUploading && (
-                <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                <div className="absolute inset-0 bg-white/60 flex items-center justify-center">
                   <LoadingSpinner size="sm" />
                 </div>
               )}
             </div>
             <button 
               onClick={() => fileInputRef.current?.click()}
-              className="absolute -bottom-2 -right-2 p-2 bg-[#21262d] rounded-lg border border-white/10 text-slate-400 hover:text-slate-100 shadow-xl transition-all hover:scale-110 active:scale-95 group-hover:border-indigo-500/50"
+              className="absolute -bottom-2 -right-2 p-2 bg-white rounded-lg border border-gray-200 text-gray-400 hover:text-gray-900 shadow-lg transition-all hover:scale-110 active:scale-95 group-hover:border-indigo-500"
               title="Upload new avatar"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -89,23 +89,23 @@ export function ProfilePage() {
             />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-slate-100">{user.name}</h1>
-            <p className="text-slate-400 font-medium capitalize flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-gray-900">{user.name}</h1>
+            <p className="text-gray-500 font-medium capitalize flex items-center gap-2">
               {user.role}
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse" />
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.3)] animate-pulse" />
             </p>
           </div>
         </div>
 
-        <div className="bg-[#161b22] border border-white/5 rounded-2xl p-6 shadow-xl space-y-6 animate-in slide-in-from-bottom-2 duration-300">
-          <h2 className="text-lg font-semibold text-slate-200">Account Settings</h2>
+        <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm space-y-6 animate-in slide-in-from-bottom-2 duration-300">
+          <h2 className="text-lg font-semibold text-gray-900">Account Settings</h2>
           
           <form onSubmit={handleSave} className="space-y-4">
             {msg && (
               <div className={`p-3 rounded-lg text-sm border flex items-center gap-2 ${
                 msg.type === 'success' 
-                  ? 'bg-green-900/20 border-green-500/30 text-green-400' 
-                  : 'bg-red-900/20 border-red-500/30 text-red-400'
+                  ? 'bg-green-50 border-green-200 text-green-700' 
+                  : 'bg-red-50 border-red-200 text-red-700'
               }`}>
                 {msg.type === 'success' ? (
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7"/></svg>
@@ -117,23 +117,23 @@ export function ProfilePage() {
             )}
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Full Name</label>
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Full Name</label>
               <input
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full bg-[#0d1117] border border-white/10 rounded-lg px-4 py-2.5 text-slate-200 focus:outline-none focus:border-indigo-500 transition-all hover:border-white/20"
+                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 text-gray-900 focus:outline-none focus:border-indigo-500 transition-all hover:border-gray-300"
                 required
               />
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Email Address</label>
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Email Address</label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-[#0d1117] border border-white/10 rounded-lg px-4 py-2.5 text-slate-200 focus:outline-none focus:border-indigo-500 transition-all hover:border-white/20"
+                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 text-gray-900 focus:outline-none focus:border-indigo-500 transition-all hover:border-gray-300"
                 required
               />
             </div>
@@ -151,15 +151,15 @@ export function ProfilePage() {
           </form>
         </div>
 
-        <div className="bg-[#161b22] border border-white/5 rounded-2xl p-6 shadow-xl space-y-4">
-          <h2 className="text-lg font-semibold text-slate-200 flex items-center gap-2">
-            <svg className="w-5 h-5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+        <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm space-y-4">
+          <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
             Security & Identity
           </h2>
-          <p className="text-sm text-slate-400">Your profile information is visible to other team members within the Freelance Command Center.</p>
+          <p className="text-sm text-gray-500">Your profile information is visible to other team members within the Freelance Command Center.</p>
           <div className="pt-2">
-             <div className="text-xs text-slate-500 uppercase font-semibold">Workspace Identifier</div>
-             <div className="text-sm font-mono text-slate-500 mt-1 bg-[#0d1117] p-2.5 rounded-lg">{user.id}</div>
+             <div className="text-xs text-gray-500 uppercase font-semibold">Workspace Identifier</div>
+             <div className="text-sm font-mono text-gray-400 mt-1 bg-gray-50 p-2.5 rounded-lg">{user.id}</div>
           </div>
         </div>
       </div>

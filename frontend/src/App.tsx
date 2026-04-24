@@ -18,12 +18,12 @@ type View = 'dashboard' | 'board' | 'availability' | 'people' | 'payroll' | 'myt
 
 const VIEW_TITLES: Record<View, string> = {
   dashboard: 'Dashboard',
-  board: 'Command Center',
-  availability: 'Availability Calendar',
-  people: 'Team Roster',
-  payroll: 'Payroll & Ledger',
-  mytasks: 'My Tasks',
-  profile: 'My Profile',
+  board: 'Projects',
+  availability: 'Availability',
+  people: 'Freelancers',
+  payroll: 'Payroll',
+  mytasks: 'My Work',
+  profile: 'Settings',
 }
 
 // Role-based default views
@@ -45,6 +45,10 @@ import { TaskDrawer } from './components/kanban/TaskDrawer'
 import { CommandPalette } from './components/CommandPalette'
 import { createTask as apiCreateTask } from './services/api'
 
+import { BottomNav } from './components/shell/BottomNav'
+import { AddMemberModal } from './components/shell/AddMemberModal'
+import { AddBrandModal } from './components/shell/AddBrandModal'
+
 function AuthenticatedApp() {
   const { user } = useAuthContext()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -53,8 +57,12 @@ function AuthenticatedApp() {
   const accessibleViews = ACCESSIBLE_VIEWS[userRole] || ACCESSIBLE_VIEWS.freelancer
   const defaultView = DEFAULT_VIEW[userRole] || DEFAULT_VIEW.freelancer
 
-  // Sync view from URL or localStorage
-  const view = (searchParams.get('v') as View) || (localStorage.getItem('currentView') as View) || defaultView
+  // 1. Derive view from URL or localStorage with strict validation
+  const paramView = searchParams.get('v') as View
+  const storedView = localStorage.getItem('currentView') as View
+  const initialView = paramView || storedView || defaultView
+  const view: View = accessibleViews.includes(initialView) ? initialView : defaultView
+  
   const brand = searchParams.get('brand') || ''
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
@@ -65,24 +73,30 @@ function AuthenticatedApp() {
   const [globalDrawerTaskId, setGlobalDrawerTaskId] = useState<string | null>(null)
   const [globalDrawerMode, setGlobalDrawerMode] = useState<'create' | 'view'>('create')
 
-  const { wsStatus } = useWS()
+  const [isAddMemberOpen, setIsAddMemberOpen] = useState(false)
+  const [isAddBrandOpen, setIsAddBrandOpen] = useState(false)
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
 
-  // Enforce role-based view access and sync to URL
+  const { wsStatus, lastMessage } = useWS()
+
+  // 2. Sync validated view to URL and localStorage
   useEffect(() => {
-    if (!accessibleViews.includes(view)) {
-      setSearchParams({ v: defaultView }, { replace: true })
-    } else if (!searchParams.get('v')) {
+    if (searchParams.get('v') !== view) {
       setSearchParams({ v: view }, { replace: true })
     }
-  }, [view, accessibleViews, defaultView, searchParams, setSearchParams])
+    localStorage.setItem('currentView', view)
+  }, [view, searchParams, setSearchParams])
 
   useEffect(() => {
     localStorage.setItem('sidebarCollapsed', String(sidebarCollapsed))
   }, [sidebarCollapsed])
 
+  // 3. WS Auto-refresh
   useEffect(() => {
-    localStorage.setItem('currentView', view)
-  }, [view])
+    if (lastMessage && (lastMessage.type === 'task.created' || lastMessage.type === 'task.status_changed' || lastMessage.type === 'task.assigned')) {
+      setRefreshTrigger(prev => prev + 1)
+    }
+  }, [lastMessage])
 
   const handleNavigate = (v: string, b?: string) => {
     const newView = v as View
@@ -98,39 +112,62 @@ function AuthenticatedApp() {
      try {
        await apiCreateTask(data)
        setIsGlobalDrawerOpen(false)
+       setRefreshTrigger(t => t + 1)
      } catch (err: any) {
        throw err
      }
   }
 
+  const onNewTask = () => {
+    setGlobalDrawerTaskId(null)
+    setGlobalDrawerMode('create')
+    setIsGlobalDrawerOpen(true)
+  }
+
   return (
-    <div className="flex h-screen bg-[#09090b] overflow-hidden font-sans text-[#fafafa]">
-      <Sidebar
-        currentView={view}
-        onNavigate={handleNavigate}
-        collapsed={sidebarCollapsed}
-        onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
-      />
-      <div className="flex flex-col flex-1 min-w-0 h-screen overflow-hidden">
-        <TopBar
-          title={VIEW_TITLES[view]}
-          wsStatus={wsStatus}
-          onNewTask={() => {
-            setGlobalDrawerTaskId(null)
-            setGlobalDrawerMode('create')
-            setIsGlobalDrawerOpen(true)
-          }}
+    <div className="flex h-screen bg-white overflow-hidden font-sans text-gray-900">
+      <div className="hidden md:flex shrink-0">
+        <Sidebar
+          currentView={view}
+          onNavigate={handleNavigate}
+          collapsed={sidebarCollapsed}
+          onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+          onAddMember={(userRole === 'superadmin' || userRole === 'admin') ? () => setIsAddMemberOpen(true) : undefined}
+          onAddBrand={(userRole === 'superadmin' || userRole === 'admin') ? () => setIsAddBrandOpen(true) : undefined}
         />
-        <main className="flex-1 overflow-hidden relative flex flex-col min-h-0 bg-[#09090b] border-l border-[#27272a]">
+      </div>
+      <div className="flex flex-col flex-1 min-w-0 h-screen overflow-hidden pb-16 md:pb-0">
+        <TopBar
+          title={VIEW_TITLES[view] || 'Command Center'}
+          wsStatus={wsStatus}
+          onNewTask={onNewTask}
+          onAddMember={(userRole === 'superadmin' || userRole === 'admin') ? () => setIsAddMemberOpen(true) : undefined}
+          onAddBrand={(userRole === 'superadmin' || userRole === 'admin') ? () => setIsAddBrandOpen(true) : undefined}
+        />
+        <main className="flex-1 overflow-hidden relative flex flex-col min-h-0 bg-white border-l border-gray-100">
           {view === 'dashboard' && <DashboardPage onNavigate={handleNavigate} />}
           {view === 'board' && <KanbanBoard />}
           {view === 'availability' && <AvailabilityPage />}
-          {view === 'people' && <PeoplePage />}
+          {view === 'people' && <PeoplePage key={refreshTrigger} />}
           {view === 'payroll' && <PayrollPage />}
-          {view === 'mytasks' && <MyTasksPage />}
+          {view === 'mytasks' && <MyTasksPage onNavigate={handleNavigate} />}
           {view === 'profile' && <ProfilePage />}
         </main>
       </div>
+
+      <BottomNav currentView={view} onNavigate={handleNavigate} />
+
+      <AddMemberModal 
+        isOpen={isAddMemberOpen} 
+        onClose={() => setIsAddMemberOpen(false)}
+        onSuccess={() => setRefreshTrigger(t => t + 1)}
+      />
+
+      <AddBrandModal 
+        isOpen={isAddBrandOpen} 
+        onClose={() => setIsAddBrandOpen(false)}
+        onSuccess={() => setRefreshTrigger(t => t + 1)}
+      />
 
       <TaskDrawer
          isOpen={isGlobalDrawerOpen}
@@ -139,7 +176,10 @@ function AuthenticatedApp() {
          taskId={globalDrawerTaskId}
          onCreate={handleGlobalCreate}
       />
-      <CommandPalette />
+      <CommandPalette 
+        onAddMember={(userRole === 'superadmin' || userRole === 'admin') ? () => setIsAddMemberOpen(true) : undefined}
+        onAddBrand={(userRole === 'superadmin' || userRole === 'admin') ? () => setIsAddBrandOpen(true) : undefined}
+      />
     </div>
   )
 }
@@ -150,8 +190,11 @@ function Router() {
 
   if (isLoading) {
     return (
-      <div className="w-full h-screen flex items-center justify-center bg-[#0d1117]">
-        <LoadingSpinner size="lg" />
+      <div className="w-full h-screen flex items-center justify-center bg-white">
+        <div className="flex flex-col items-center gap-4">
+          <LoadingSpinner size="lg" />
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] animate-pulse">Initializing System</span>
+        </div>
       </div>
     )
   }
@@ -179,4 +222,3 @@ export default function App() {
     </BrowserRouter>
   )
 }
-
