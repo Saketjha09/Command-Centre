@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,11 +11,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/saket/command-center/backend/internal/auth"
-	"github.com/saket/command-center/backend/internal/notifications"
+	notifs "github.com/saket/command-center/backend/internal/notifications"
 	"github.com/saket/command-center/backend/pkg/config"
+	"github.com/saket/command-center/backend/pkg/middleware"
 )
 
 // ── JSON helpers ──────────────────────────────────────────────────────────────
@@ -165,6 +168,25 @@ func HandleAssignTask(pool *pgxpool.Pool, cfg *config.Config, hub WSBroadcaster)
 				if err := hub.BroadcastToUser(*t.AssignedTo, "task:assigned", t); err != nil {
 					slog.Error("ws: task:assigned user", "user_id", *t.AssignedTo, "error", err)
 				}
+
+				recipientID, parseErr := uuid.Parse(*t.AssignedTo)
+				taskID, taskParseErr := uuid.Parse(t.ID)
+				if parseErr == nil && taskParseErr == nil {
+					if err := notifs.CreateAndBroadcast(
+						context.Background(),
+						pool,
+						hub,
+						notifs.CreateNotificationParams{
+							RecipientID:   recipientID,
+							Type:          "task_assigned",
+							Title:         "New task assigned",
+							Message:       fmt.Sprintf("You have been assigned: %s", t.Title),
+							RelatedTaskID: &taskID,
+						},
+					); err != nil {
+						slog.Error("notifications: task_assigned failed", "error", err, "task_id", t.ID)
+					}
+				}
 			}
 		}(task)
 		writeJSON(w, http.StatusOK, task)
@@ -183,7 +205,7 @@ func HandleAssignTask(pool *pgxpool.Pool, cfg *config.Config, hub WSBroadcaster)
 					return
 				}
 
-				notifications.DispatchTaskAssignmentNotification(
+				notifs.DispatchTaskAssignmentNotification(
 					pool, cfg,
 					tid,
 					*slackID,
@@ -245,6 +267,27 @@ func HandleTransitionStatus(pool *pgxpool.Pool, cfg *config.Config, hub WSBroadc
 			}
 			if err := hub.BroadcastToRole("superadmin", "task:status_changed", t); err != nil {
 				slog.Error("ws: task:status_changed superadmin", "error", err)
+			}
+
+			if t.Status == TaskStatusInReview {
+				creatorID, parseErr := uuid.Parse(t.CreatedBy)
+				taskID, taskParseErr := uuid.Parse(t.ID)
+				if parseErr == nil && taskParseErr == nil {
+					if err := notifs.CreateAndBroadcast(
+						context.Background(),
+						pool,
+						hub,
+						notifs.CreateNotificationParams{
+							RecipientID:   creatorID,
+							Type:          "task_status_changed",
+							Title:         "Task ready for review",
+							Message:       fmt.Sprintf("%s is ready for review", t.Title),
+							RelatedTaskID: &taskID,
+						},
+					); err != nil {
+						slog.Error("notifications: task_status_changed failed", "error", err, "task_id", t.ID)
+					}
+				}
 			}
 		}(task)
 		writeJSON(w, http.StatusOK, task)
