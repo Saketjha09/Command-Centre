@@ -62,5 +62,6 @@ export interface WSMessage {
     | 'task.assigned' 
     | 'task.status_changed' 
     | 'availability:updated'
+    | 'notification:new'
   payload: unknown
 }
