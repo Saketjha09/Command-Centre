@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import type { TaskSummary, TaskStatus } from '../../types/task'
 import { KANBAN_COLUMNS } from '../../types/task'
+import { TaskComments } from './TaskComments'
 
 interface TaskCardProps {
   task: TaskSummary
@@ -25,6 +26,7 @@ const PRIORITY_COLORS = {
 
 export function TaskCard({ task, onMove }: TaskCardProps) {
   const [isMoving, setIsMoving] = useState(false)
+  const [showComments, setShowComments] = useState(false)
 
   const currentIndex = KANBAN_COLUMNS.indexOf(task.status)
   const prevStatus = KANBAN_COLUMNS[currentIndex - 1]
@@ -103,6 +105,23 @@ export function TaskCard({ task, onMove }: TaskCardProps) {
           >
             Forward →
           </button>
+        )}
+      </div>
+
+      <div className="mt-3">
+        <button
+          onClick={() => setShowComments(!showComments)}
+          className="text-[11px] text-gray-400 hover:text-gray-200 transition-colors flex items-center gap-1"
+        >
+          {showComments ? (
+            <><span>✕</span> Close</>
+          ) : (
+            <><span>💬</span> Comments</>
+          )}
+        </button>
+
+        {showComments && (
+          <TaskComments taskId={task.id} darkMode />
         )}
       </div>
     </div>
