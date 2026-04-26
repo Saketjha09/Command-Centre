@@ -9,10 +9,19 @@ const SLOT_CONFIG = {
 };
 
 const STATUS_STYLES: Record<SlotStatus, string> = {
-  available: 'bg-green-100 text-green-700 border-green-200 hover:bg-green-200',
-  offline: 'bg-red-100 text-red-700 border-red-200 hover:bg-red-200',
-  booked: 'bg-amber-100 text-amber-700 border-amber-200 cursor-not-allowed',
-  unknown: 'bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-200',
+  available:   'bg-green-100 text-green-700 border-green-200 hover:bg-green-200',
+  busy_manual: 'bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-200',
+  busy_task:   'bg-amber-100 text-amber-700 border-amber-200 cursor-not-allowed',
+  off:         'bg-red-100 text-red-700 border-red-200 hover:bg-red-200',
+  unknown:     'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200',
+};
+
+const STATUS_LABELS: Record<SlotStatus, string> = {
+  available:   'Available',
+  busy_manual: 'Busy',
+  busy_task:   'Assigned',
+  off:         'Off',
+  unknown:     'Not Set',
 };
 
 export const FreelancerAvailability: React.FC = () => {
@@ -101,12 +110,12 @@ export const FreelancerAvailability: React.FC = () => {
                             STATUS_STYLES[slot.status]
                           }`}
                         >
-                          {slot.status === 'booked' && (
+                          {slot.status === 'busy_task' && (
                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                             </svg>
                           )}
-                          <span className="capitalize">{slot.status}</span>
+                          <span>{STATUS_LABELS[slot.status]}</span>
                         </button>
                       </div>
 
