@@ -33,15 +33,9 @@ export function MyTasksPage({ onNavigate }: Props) {
     loadData();
   }, [loadData]);
 
-  const handleTaskAdvanced = (taskId: string, newStatus: TaskStatus) => {
-    setTasks(prev => prev.map(t => 
-      t.id === taskId ? { ...t, status: newStatus } : t
-    ));
-  };
-
-  const activeMissions = useMemo(() => 
-    tasks.filter(t => !['approved', 'paid'].includes(t.status)), 
-  [tasks]);
+  const myTasks = useMemo(() => 
+    tasks.filter(t => t.assigned_to === userID && t.status !== 'done'), 
+  [tasks, userID]);
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-white relative overflow-hidden">
@@ -104,10 +98,10 @@ export function MyTasksPage({ onNavigate }: Props) {
             <div className="bg-white rounded-[40px] border border-gray-200 shadow-sm overflow-hidden min-h-[300px]">
               <div className="overflow-x-auto">
                 <TaskListView 
-                  tasks={activeMissions} 
+                  tasks={myTasks} 
                   loading={loading}
+                  freelancerMode={true}
                   onTaskClick={(taskId) => onNavigate(`board?task=${taskId}`)}
-                  onTaskAdvanced={handleTaskAdvanced}
                 />
               </div>
             </div>

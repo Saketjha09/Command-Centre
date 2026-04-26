@@ -9,7 +9,7 @@ interface Props {
   tasks: TaskSummary[]
   loading: boolean
   onTaskClick: (taskId: string) => void
-  onTaskAdvanced?: (taskId: string, newStatus: TaskStatus) => void
+  freelancerMode?: boolean
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -26,9 +26,9 @@ const PRIORITY_FLAGS: Record<string, { color: string }> = {
   low: { color: 'text-gray-400' },
 }
 
-export function TaskListView({ tasks, loading, onTaskClick, onTaskAdvanced }: Props) {
+export function TaskListView({ tasks, loading, onTaskClick, freelancerMode }: Props) {
   const { id: currentUserId } = useAuth()
-  const [advancingId, setAdvancingId] = useState<string | null>(null)
+  const [advancing, setAdvancing] = useState<Record<string, boolean>>({})
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() => {
     return TASK_STATUSES.reduce((acc, status) => ({ ...acc, [status]: true }), {})
   })
@@ -55,16 +55,16 @@ export function TaskListView({ tasks, loading, onTaskClick, onTaskAdvanced }: Pr
     return null
   }
 
-  const handleAdvance = async (e: React.MouseEvent, task: TaskSummary, nextStatus: TaskStatus) => {
+  const handleAdvance = async (e: React.MouseEvent, taskId: string, nextStatus: TaskStatus) => {
     e.stopPropagation()
-    setAdvancingId(task.id)
+    setAdvancing(prev => ({ ...prev, [taskId]: true }))
     try {
-      await updateTaskStatus(task.id, nextStatus)
-      onTaskAdvanced?.(task.id, nextStatus)
+      await updateTaskStatus(taskId, nextStatus)
+      // tasks will update via WS event task:status_changed
     } catch (err) {
       console.error('Failed to advance task:', err)
     } finally {
-      setAdvancingId(null)
+      setAdvancing(prev => ({ ...prev, [taskId]: false }))
     }
   }
 
@@ -138,7 +138,7 @@ export function TaskListView({ tasks, loading, onTaskClick, onTaskAdvanced }: Pr
                   {groupTasks.map(task => {
                     const dateInfo = getDateStatus(task.deadline)
                     const advanceAction = getAdvanceAction(task, currentUserId)
-                    const isAdvancing = advancingId === task.id
+                    const isAdvancing = advancing[task.id]
                     
                     return (
                       <div 
@@ -156,17 +156,19 @@ export function TaskListView({ tasks, loading, onTaskClick, onTaskAdvanced }: Pr
                           </span>
                           
                           {/* Hover Actions */}
-                          <div className="ml-4 flex items-center gap-1.5 opacity-0 group-hover/row:opacity-100 transition-opacity">
-                            <button className="p-1 hover:bg-gray-200 rounded text-gray-400 hover:text-gray-600" title="Add subtask">
-                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/></svg>
-                            </button>
-                            <button className="p-1 hover:bg-gray-200 rounded text-gray-400 hover:text-gray-600" title="Edit tags">
-                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/></svg>
-                            </button>
-                            <button className="p-1 hover:bg-gray-200 rounded text-gray-400 hover:text-gray-600" title="Edit name">
-                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
-                            </button>
-                          </div>
+                          {!freelancerMode && (
+                            <div className="ml-4 flex items-center gap-1.5 opacity-0 group-hover/row:opacity-100 transition-opacity">
+                              <button className="p-1 hover:bg-gray-200 rounded text-gray-400 hover:text-gray-600" title="Add subtask">
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/></svg>
+                              </button>
+                              <button className="p-1 hover:bg-gray-200 rounded text-gray-400 hover:text-gray-600" title="Edit tags">
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/></svg>
+                              </button>
+                              <button className="p-1 hover:bg-gray-200 rounded text-gray-400 hover:text-gray-600" title="Edit name">
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+                              </button>
+                            </div>
+                          )}
                         </div>
 
                         <div className="w-32 flex items-center">
@@ -196,13 +198,39 @@ export function TaskListView({ tasks, loading, onTaskClick, onTaskAdvanced }: Pr
 
                         <div className="w-40 flex justify-center">
                           {isAdvancing ? (
-                            <div className="flex items-center gap-2 text-[10px] font-bold text-emerald-600 animate-pulse">
+                            <div className="flex items-center gap-2 text-[10px] font-black text-emerald-600 animate-pulse">
                               <div className="w-3 h-3 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
-                              UPDATING...
+                              PROCESSING...
+                            </div>
+                          ) : freelancerMode ? (
+                            <div className="flex items-center justify-center w-full">
+                              {task.status === 'assigned' && (
+                                <button
+                                  onClick={(e) => handleAdvance(e, task.id, 'in_progress')}
+                                  className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-full shadow-lg shadow-emerald-500/20 transition-all active:scale-95 flex items-center gap-2"
+                                >
+                                  Start Work
+                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
+                                </button>
+                              )}
+                              {task.status === 'in_progress' && (
+                                <button
+                                  onClick={(e) => handleAdvance(e, task.id, 'in_review')}
+                                  className="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-full shadow-lg shadow-indigo-500/20 transition-all active:scale-95 flex items-center gap-2"
+                                >
+                                  Submit Review
+                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
+                                </button>
+                              )}
+                              {!['assigned', 'in_progress'].includes(task.status) && (
+                                <div className={`${statusColor} text-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide rounded-sm shadow-sm min-w-[80px] text-center opacity-50`}>
+                                  {STATUS_LABELS[task.status as TaskStatus] || task.status}
+                                </div>
+                              )}
                             </div>
                           ) : advanceAction ? (
                             <button
-                              onClick={(e) => handleAdvance(e, task, advanceAction.nextStatus)}
+                              onClick={(e) => handleAdvance(e, task.id, advanceAction.nextStatus)}
                               className="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1 text-[10px] font-black uppercase tracking-wider rounded-full shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
                             >
                               {advanceAction.label}
@@ -224,10 +252,12 @@ export function TaskListView({ tasks, loading, onTaskClick, onTaskAdvanced }: Pr
                   })}
 
                   {/* Add Task Button */}
-                  <button className="flex items-center gap-2 px-6 py-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors text-xs font-medium border-b border-gray-100">
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/></svg>
-                    Add Task
-                  </button>
+                  {!freelancerMode && (
+                    <button className="flex items-center gap-2 px-6 py-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors text-xs font-medium border-b border-gray-100">
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/></svg>
+                      Add Task
+                    </button>
+                  )}
                 </div>
               )}
             </div>

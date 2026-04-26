@@ -15,6 +15,8 @@ export const KANBAN_COLUMNS: TaskStatus[] = [
   'done',
 ]
 
+export const TASK_STATUSES = KANBAN_COLUMNS
+
 // Humanized column labels.
 export const STATUS_LABELS: Record<TaskStatus, string> = {
   unassigned: 'Unassigned',
