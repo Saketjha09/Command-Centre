@@ -27,28 +27,34 @@ import (
 	"strings"
 )
 
-func corsMiddleware(allowedOrigins string) func(http.Handler) http.Handler {
+func corsMiddleware(allowedOrigins string, env string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := r.Header.Get("Origin")
-			allowed := strings.Split(allowedOrigins, ",")
-			
 			matched := false
-			// In development, we can be more lenient with localhost
-			if origin != "" && (strings.HasPrefix(origin, "http://localhost:") || strings.HasPrefix(origin, "http://127.0.0.1:")) {
+
+			// Check 1: localhost bypass — development only, never production
+			if env != "production" &&
+				(strings.HasPrefix(origin, "http://localhost:") ||
+					strings.HasPrefix(origin, "http://127.0.0.1:")) {
 				matched = true
-			} else {
-				for _, o := range allowed {
-					if strings.TrimSpace(o) == origin && origin != "" {
+			}
+
+			// Check 2: explicit allowlist — runs in ALL environments
+			// including production. This is the ONLY path in production.
+			if !matched {
+				for _, allowed := range strings.Split(allowedOrigins, ",") {
+					if strings.TrimSpace(allowed) == origin && origin != "" {
 						matched = true
 						break
 					}
 				}
 			}
 
-			if matched {
+			if matched && origin != "" {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 				w.Header().Set("Access-Control-Allow-Credentials", "true")
+				w.Header().Set("Vary", "Origin")
 				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Cookie")
 			}
@@ -154,7 +160,7 @@ func main() {
 	// -------------------------------------------------------------------------
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           corsMiddleware(cfg.AllowedOrigins)(slashMiddleware(middleware.SecurityHeaders(mux))),
+		Handler:           corsMiddleware(cfg.AllowedOrigins, cfg.GOEnv)(slashMiddleware(middleware.SecurityHeaders(mux))),
 		ReadTimeout:       15 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,   // slow-loris fix
 		WriteTimeout:      15 * time.Second,
