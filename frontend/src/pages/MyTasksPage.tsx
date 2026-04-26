@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { fetchTasks } from '../services/api';
-import type { TaskSummary } from '../types/task';
+import type { TaskSummary, TaskStatus } from '../types/task';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 import { FreelancerAvailability } from '../components/availability/FreelancerAvailability';
 import { TaskListView } from '../components/kanban/TaskListView';
@@ -32,6 +32,12 @@ export function MyTasksPage({ onNavigate }: Props) {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  const handleTaskAdvanced = (taskId: string, newStatus: TaskStatus) => {
+    setTasks(prev => prev.map(t => 
+      t.id === taskId ? { ...t, status: newStatus } : t
+    ));
+  };
 
   const activeMissions = useMemo(() => 
     tasks.filter(t => !['approved', 'paid'].includes(t.status)), 
@@ -100,7 +106,8 @@ export function MyTasksPage({ onNavigate }: Props) {
                 <TaskListView 
                   tasks={activeMissions} 
                   loading={loading}
-                  onTaskClick={(task) => onNavigate(`board?task=${task.id}`)}
+                  onTaskClick={(taskId) => onNavigate(`board?task=${taskId}`)}
+                  onTaskAdvanced={handleTaskAdvanced}
                 />
               </div>
             </div>

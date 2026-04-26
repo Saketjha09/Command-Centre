@@ -2,19 +2,22 @@ import { useState, useMemo } from 'react'
 import type { TaskSummary, TaskStatus } from '../../types/task'
 import { TASK_STATUSES, STATUS_LABELS } from '../../types/task'
 import { LoadingSpinner } from '../LoadingSpinner'
+import { useAuth } from '../../hooks/useAuth'
+import { updateTaskStatus } from '../../services/taskService'
 
 interface Props {
   tasks: TaskSummary[]
   loading: boolean
   onTaskClick: (taskId: string) => void
+  onTaskAdvanced?: (taskId: string, newStatus: TaskStatus) => void
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  brief_pending: 'bg-gray-400',
+  unassigned: 'bg-slate-400',
+  assigned: 'bg-indigo-500',
   in_progress: 'bg-blue-600',
-  review: 'bg-orange-500',
-  approved: 'bg-emerald-500',
-  paid: 'bg-purple-600',
+  in_review: 'bg-orange-500',
+  done: 'bg-emerald-500',
 }
 
 const PRIORITY_FLAGS: Record<string, { color: string }> = {
@@ -23,7 +26,9 @@ const PRIORITY_FLAGS: Record<string, { color: string }> = {
   low: { color: 'text-gray-400' },
 }
 
-export function TaskListView({ tasks, loading, onTaskClick }: Props) {
+export function TaskListView({ tasks, loading, onTaskClick, onTaskAdvanced }: Props) {
+  const { id: currentUserId } = useAuth()
+  const [advancingId, setAdvancingId] = useState<string | null>(null)
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() => {
     return TASK_STATUSES.reduce((acc, status) => ({ ...acc, [status]: true }), {})
   })
@@ -37,6 +42,30 @@ export function TaskListView({ tasks, loading, onTaskClick }: Props) {
 
   const toggleGroup = (status: string) => {
     setExpandedGroups(prev => ({ ...prev, [status]: !prev[status] }))
+  }
+
+  const getAdvanceAction = (task: TaskSummary, userId: string): { label: string, nextStatus: TaskStatus } | null => {
+    if (task.assigned_to !== userId) return null
+    if (task.status === 'assigned') {
+      return { label: 'Start Work', nextStatus: 'in_progress' }
+    }
+    if (task.status === 'in_progress') {
+      return { label: 'Submit for Review', nextStatus: 'in_review' }
+    }
+    return null
+  }
+
+  const handleAdvance = async (e: React.MouseEvent, task: TaskSummary, nextStatus: TaskStatus) => {
+    e.stopPropagation()
+    setAdvancingId(task.id)
+    try {
+      await updateTaskStatus(task.id, nextStatus)
+      onTaskAdvanced?.(task.id, nextStatus)
+    } catch (err) {
+      console.error('Failed to advance task:', err)
+    } finally {
+      setAdvancingId(null)
+    }
   }
 
   const getDateStatus = (deadline: string | null) => {
@@ -73,7 +102,7 @@ export function TaskListView({ tasks, loading, onTaskClick }: Props) {
           <div className="w-32 text-xs text-gray-400 font-medium uppercase tracking-wider">Assignee</div>
           <div className="w-32 text-xs text-gray-400 font-medium uppercase tracking-wider">Due date</div>
           <div className="w-32 text-xs text-gray-400 font-medium uppercase tracking-wider">Priority</div>
-          <div className="w-40 text-xs text-gray-400 font-medium uppercase tracking-wider text-center">Status</div>
+          <div className="w-40 text-xs text-gray-400 font-medium uppercase tracking-wider text-center">Status / Action</div>
           <div className="w-24 text-xs text-gray-400 font-medium uppercase tracking-wider text-right pr-4">Comments</div>
         </div>
 
@@ -108,6 +137,8 @@ export function TaskListView({ tasks, loading, onTaskClick }: Props) {
                 <div className="flex flex-col">
                   {groupTasks.map(task => {
                     const dateInfo = getDateStatus(task.deadline)
+                    const advanceAction = getAdvanceAction(task, currentUserId)
+                    const isAdvancing = advancingId === task.id
                     
                     return (
                       <div 
@@ -164,9 +195,23 @@ export function TaskListView({ tasks, loading, onTaskClick }: Props) {
                         </div>
 
                         <div className="w-40 flex justify-center">
-                          <div className={`${statusColor} text-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide rounded-sm shadow-sm min-w-[80px] text-center`}>
-                            {STATUS_LABELS[task.status as TaskStatus] || task.status}
-                          </div>
+                          {isAdvancing ? (
+                            <div className="flex items-center gap-2 text-[10px] font-bold text-emerald-600 animate-pulse">
+                              <div className="w-3 h-3 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+                              UPDATING...
+                            </div>
+                          ) : advanceAction ? (
+                            <button
+                              onClick={(e) => handleAdvance(e, task, advanceAction.nextStatus)}
+                              className="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1 text-[10px] font-black uppercase tracking-wider rounded-full shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
+                            >
+                              {advanceAction.label}
+                            </button>
+                          ) : (
+                            <div className={`${statusColor} text-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide rounded-sm shadow-sm min-w-[80px] text-center`}>
+                              {STATUS_LABELS[task.status as TaskStatus] || task.status}
+                            </div>
+                          )}
                         </div>
 
                         <div className="w-24 flex items-center justify-end pr-4">
