@@ -11,8 +11,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/saket/command-center/backend/internal/auth"
 	"github.com/saket/command-center/backend/internal/pkg/drive"
+	"github.com/saket/command-center/backend/pkg/authutil"
 	"github.com/saket/command-center/backend/pkg/config"
 )
 
@@ -193,7 +193,7 @@ func transitionStatus(_ context.Context, pool *pgxpool.Pool, taskID, newStatus, 
 // GetTaskByID fetches a single task by its UUID string.
 // Returns ErrTaskNotFound if no row matches.
 // RBAC: If claims.Role is freelancer, the task must be assigned to them.
-func getTaskByID(_ context.Context, pool *pgxpool.Pool, id string, claims *auth.TokenClaims) (TaskDetail, error) {
+func getTaskByID(_ context.Context, pool *pgxpool.Pool, id string, claims *authutil.TokenClaims) (TaskDetail, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
 
@@ -229,7 +229,7 @@ func getTaskByID(_ context.Context, pool *pgxpool.Pool, id string, claims *auth.
 // listTasks returns tasks optionally filtered by brand and/or status.
 // Pass empty strings to omit a filter. Results are ordered by created_at DESC.
 // Always returns an empty slice (never nil) so the JSON response is [] not null.
-func listTasks(_ context.Context, pool *pgxpool.Pool, claims *auth.TokenClaims, brand, status string) ([]TaskSummary, error) {
+func listTasks(_ context.Context, pool *pgxpool.Pool, claims *authutil.TokenClaims, brand, status string) ([]TaskSummary, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
 
@@ -303,18 +303,27 @@ func listTaskHistory(_ context.Context, pool *pgxpool.Pool, taskID string) ([]Ta
 }
 
 // listGlobalActivity fetches the latest history entries across all tasks.
-func listGlobalActivity(pool *pgxpool.Pool, limit int) ([]TaskHistoryEntry, error) {
+// RBAC: Freelancers only see history for tasks assigned to them.
+func listGlobalActivity(pool *pgxpool.Pool, claims *authutil.TokenClaims, limit int) ([]TaskHistoryEntry, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
 
-	const q = `
+	q := `
 		SELECT h.id, h.task_id, h.user_id, u.name, h.action, h.from_value, h.to_value, h.created_at
 		FROM ops.task_history h
 		JOIN ops.users u ON h.user_id = u.id
-		ORDER BY h.created_at DESC
-		LIMIT $1`
+		JOIN ops.tasks t ON h.task_id = t.id`
+	
+	args := []any{limit}
+	
+	if claims != nil && claims.Role == "freelancer" {
+		q += ` WHERE (t.assigned_to = $2)`
+		args = append(args, claims.UserID)
+	}
+	
+	q += ` ORDER BY h.created_at DESC LIMIT $1`
 
-	rows, err := pool.Query(ctx, q, limit)
+	rows, err := pool.Query(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("tasks: list global history query: %w", err)
 	}

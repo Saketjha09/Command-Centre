@@ -11,9 +11,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/saket/command-center/backend/internal/auth"
 	"github.com/saket/command-center/backend/internal/notifications"
 	"github.com/saket/command-center/backend/pkg/config"
-	"github.com/saket/command-center/backend/pkg/middleware"
 )
 
 // ── JSON helpers ──────────────────────────────────────────────────────────────
@@ -34,7 +34,7 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 func HandleCreateTask(pool *pgxpool.Pool, cfg *config.Config, hub WSBroadcaster) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// 1. Extract claims — guaranteed by adminOnly middleware, but we guard anyway.
-		claims, ok := middleware.ClaimsFromContext(r.Context())
+		claims, ok := auth.ClaimsFromContext(r.Context())
 		if !ok {
 			log.Printf("tasks: HandleCreateTask: missing claims in context")
 			writeError(w, http.StatusInternalServerError, "internal error")
@@ -70,7 +70,7 @@ func HandleCreateTask(pool *pgxpool.Pool, cfg *config.Config, hub WSBroadcaster)
 // HandleListTasks handles GET /api/v1/tasks (any authenticated user).
 func HandleListTasks(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		claims, ok := middleware.ClaimsFromContext(r.Context())
+		claims, ok := auth.ClaimsFromContext(r.Context())
 		if !ok {
 			log.Printf("tasks: HandleListTasks: missing claims in context")
 			writeError(w, http.StatusInternalServerError, "internal error")
@@ -100,7 +100,7 @@ func HandleListTasks(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 func HandleGetTask(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
-		claims, _ := middleware.ClaimsFromContext(r.Context())
+		claims, _ := auth.ClaimsFromContext(r.Context())
 
 		task, err := GetTask(pool, claims, id)
 		if err != nil {
@@ -123,7 +123,7 @@ func HandleAssignTask(pool *pgxpool.Pool, cfg *config.Config, hub WSBroadcaster)
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
 
-		claims, ok := middleware.ClaimsFromContext(r.Context())
+		claims, ok := auth.ClaimsFromContext(r.Context())
 		if !ok {
 			log.Printf("tasks: HandleAssignTask: missing claims in context")
 			writeError(w, http.StatusInternalServerError, "internal error")
@@ -196,7 +196,7 @@ func HandleTransitionStatus(pool *pgxpool.Pool, cfg *config.Config, hub WSBroadc
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
 
-		claims, ok := middleware.ClaimsFromContext(r.Context())
+		claims, ok := auth.ClaimsFromContext(r.Context())
 		if !ok {
 			log.Printf("tasks: HandleTransitionStatus: missing claims in context")
 			writeError(w, http.StatusInternalServerError, "internal error")
@@ -248,7 +248,8 @@ func HandleListTaskHistory(pool *pgxpool.Pool, cfg *config.Config) http.HandlerF
 // HandleGlobalActivity handles GET /api/v1/activity.
 func HandleGlobalActivity(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		history, err := listGlobalActivity(pool, 20)
+		claims, _ := auth.ClaimsFromContext(r.Context())
+		history, err := listGlobalActivity(pool, claims, 20)
 		if err != nil {
 			log.Printf("tasks: global activity: %v", err)
 			writeError(w, http.StatusInternalServerError, "failed to get activity")

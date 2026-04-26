@@ -32,14 +32,14 @@ func HandleWebSocket(hub *Hub, cfg *config.Config) http.HandlerFunc {
 
 		cookie, err := r.Cookie("access_token")
 		if err != nil {
-			// Missing cookie — reject with a plain HTTP 401 (still possible here).
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": "authentication required"})
 			return
 		}
+		token := cookie.Value
 
-		if _, err := auth.ValidateAccessToken(cfg, cookie.Value); err != nil {
+		if _, err := auth.ValidateAccessToken(cfg, token); err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid or expired token"})
