@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -40,7 +39,7 @@ func HandleCreateTask(pool *pgxpool.Pool, cfg *config.Config, hub WSBroadcaster)
 		// 1. Extract claims — guaranteed by adminOnly middleware, but we guard anyway.
 		claims, ok := auth.ClaimsFromContext(r.Context())
 		if !ok {
-			log.Printf("tasks: HandleCreateTask: missing claims in context")
+			slog.Error("tasks: HandleCreateTask: missing claims in context")
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
@@ -60,7 +59,7 @@ func HandleCreateTask(pool *pgxpool.Pool, cfg *config.Config, hub WSBroadcaster)
 				// Strip the internal sentinel prefix; send only the human-readable message.
 				writeError(w, http.StatusBadRequest, strings.TrimPrefix(err.Error(), ErrValidation.Error()+": "))
 			default:
-				log.Printf("tasks: create: %v", err)
+				slog.Error("tasks: create", "error", err)
 				writeError(w, http.StatusInternalServerError, "failed to create task")
 			}
 			return
@@ -76,7 +75,7 @@ func HandleListTasks(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := auth.ClaimsFromContext(r.Context())
 		if !ok {
-			log.Printf("tasks: HandleListTasks: missing claims in context")
+			slog.Error("tasks: HandleListTasks: missing claims in context")
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
@@ -90,7 +89,7 @@ func HandleListTasks(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 			case errors.Is(err, ErrValidation):
 				writeError(w, http.StatusBadRequest, strings.TrimPrefix(err.Error(), ErrValidation.Error()+": "))
 			default:
-				log.Printf("tasks: list: %v", err)
+				slog.Error("tasks: list", "error", err)
 				writeError(w, http.StatusInternalServerError, "failed to list tasks")
 			}
 			return
@@ -112,7 +111,7 @@ func HandleGetTask(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 			case errors.Is(err, ErrTaskNotFound):
 				writeError(w, http.StatusNotFound, "task not found")
 			default:
-				log.Printf("tasks: get(%s): %v", id, err)
+				slog.Error("tasks: get", "id", id, "error", err)
 				writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to get task: %v", err))
 			}
 			return
@@ -129,7 +128,7 @@ func HandleAssignTask(pool *pgxpool.Pool, cfg *config.Config, hub WSBroadcaster)
 
 		claims, ok := auth.ClaimsFromContext(r.Context())
 		if !ok {
-			log.Printf("tasks: HandleAssignTask: missing claims in context")
+			slog.Error("tasks: HandleAssignTask: missing claims in context")
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
@@ -151,7 +150,7 @@ func HandleAssignTask(pool *pgxpool.Pool, cfg *config.Config, hub WSBroadcaster)
 				// Strip the internal sentinel prefix; send only the human-readable message.
 				writeError(w, http.StatusBadRequest, strings.TrimPrefix(err.Error(), ErrValidation.Error()+": "))
 			default:
-				log.Printf("tasks: assign(%s): %v", id, err)
+				slog.Error("tasks: assign", "id", id, "error", err)
 				writeError(w, http.StatusInternalServerError, "failed to assign task")
 			}
 			return
@@ -197,11 +196,11 @@ func HandleAssignTask(pool *pgxpool.Pool, cfg *config.Config, hub WSBroadcaster)
 				var slackID *string
 				err := pool.QueryRow(r.Context(), "SELECT slack_user_id FROM ops.users WHERE id = $1", uid).Scan(&slackID)
 				if err != nil {
-					log.Printf("notifications: failed to lookup slack_user_id for user %s: %v", uid, err)
+					slog.Error("notifications: failed to lookup slack_user_id", "user_id", uid, "error", err)
 					return
 				}
 				if slackID == nil || *slackID == "" {
-					log.Printf("notifications: user %s has no slack_user_id configured", uid)
+					slog.Error("notifications: user has no slack_user_id configured", "user_id", uid)
 					return
 				}
 
@@ -257,7 +256,7 @@ func HandleTransitionStatus(pool *pgxpool.Pool, cfg *config.Config, hub WSBroadc
 				// Strip the internal sentinel prefix; send only the human-readable message.
 				writeError(w, http.StatusBadRequest, strings.TrimPrefix(err.Error(), ErrValidation.Error()+": "))
 			default:
-				log.Printf("tasks: transition(%s → %s): %v", id, req.Status, err)
+				slog.Error("tasks: transition", "from", id, "to", req.Status, "error", err)
 				writeError(w, http.StatusInternalServerError, "failed to transition status")
 			}
 			return
@@ -302,7 +301,7 @@ func HandleListTaskHistory(pool *pgxpool.Pool, cfg *config.Config) http.HandlerF
 		id := r.PathValue("id")
 		history, err := ListTaskHistory(pool, id)
 		if err != nil {
-			log.Printf("tasks: history(%s): %v", id, err)
+			slog.Error("tasks: history", "id", id, "error", err)
 			writeError(w, http.StatusInternalServerError, "failed to get task history")
 			return
 		}
@@ -316,7 +315,7 @@ func HandleGlobalActivity(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFu
 		claims, _ := auth.ClaimsFromContext(r.Context())
 		history, err := listGlobalActivity(pool, claims, 20)
 		if err != nil {
-			log.Printf("tasks: global activity: %v", err)
+			slog.Error("tasks: global activity", "error", err)
 			writeError(w, http.StatusInternalServerError, "failed to get activity")
 			return
 		}
@@ -330,7 +329,7 @@ func HandleSearch(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 		q := r.URL.Query().Get("q")
 		results, err := GlobalSearch(pool, q)
 		if err != nil {
-			log.Printf("tasks: search(%s): %v", q, err)
+			slog.Error("tasks: search", "query", q, "error", err)
 			writeError(w, http.StatusInternalServerError, "search failed")
 			return
 		}
@@ -343,7 +342,7 @@ func HandleDashboardMetrics(pool *pgxpool.Pool, cfg *config.Config) http.Handler
 	return func(w http.ResponseWriter, r *http.Request) {
 		metrics, err := GetDashboardMetrics(pool)
 		if err != nil {
-			log.Printf("tasks: dashboard metrics: %v", err)
+			slog.Error("tasks: dashboard metrics", "error", err)
 			writeError(w, http.StatusInternalServerError, "failed to get dashboard metrics")
 			return
 		}
