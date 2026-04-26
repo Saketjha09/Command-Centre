@@ -559,3 +559,68 @@ func scanTaskSummary(rows pgx.Rows) (TaskSummary, error) {
 func pgUUIDString(u pgtype.UUID) string {
 	return uuid.UUID(u.Bytes).String()
 }
+
+// ── comment operations ────────────────────────────────────────────────────────
+
+// CreateComment inserts a comment and returns it with the author's display name.
+// Uses a CTE so the INSERT and author-name lookup run in a single round-trip.
+func CreateComment(ctx context.Context, pool *pgxpool.Pool, taskID, authorID, body string) (Comment, error) {
+	const q = `
+		WITH inserted AS (
+			INSERT INTO ops.task_comments (task_id, author_id, body)
+			VALUES ($1, $2, $3)
+			RETURNING id, task_id, author_id, body, created_at
+		)
+		SELECT i.id, i.task_id, i.author_id, u.name, i.body, i.created_at
+		FROM inserted i
+		JOIN ops.users u ON u.id = i.author_id`
+
+	var c Comment
+	var id, tID, aID pgtype.UUID
+	err := pool.QueryRow(ctx, q, taskID, authorID, body).Scan(
+		&id, &tID, &aID, &c.AuthorName, &c.Body, &c.CreatedAt,
+	)
+	if err != nil {
+		return Comment{}, fmt.Errorf("tasks: create comment: %w", err)
+	}
+
+	c.ID = pgUUIDString(id)
+	c.TaskID = pgUUIDString(tID)
+	c.AuthorID = pgUUIDString(aID)
+	return c, nil
+}
+
+// ListComments returns comments for a task, oldest-first (chat style).
+func ListComments(ctx context.Context, pool *pgxpool.Pool, taskID string, limit int) ([]Comment, error) {
+	const q = `
+		SELECT c.id, c.task_id, c.author_id,
+		       u.name AS author_name, c.body, c.created_at
+		FROM ops.task_comments c
+		JOIN ops.users u ON u.id = c.author_id
+		WHERE c.task_id = $1
+		ORDER BY c.created_at ASC
+		LIMIT $2`
+
+	rows, err := pool.Query(ctx, q, taskID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("tasks: list comments query: %w", err)
+	}
+	defer rows.Close()
+
+	comments := make([]Comment, 0)
+	for rows.Next() {
+		var c Comment
+		var id, tID, aID pgtype.UUID
+		if err := rows.Scan(&id, &tID, &aID, &c.AuthorName, &c.Body, &c.CreatedAt); err != nil {
+			return nil, fmt.Errorf("tasks: scan comment: %w", err)
+		}
+		c.ID = pgUUIDString(id)
+		c.TaskID = pgUUIDString(tID)
+		c.AuthorID = pgUUIDString(aID)
+		comments = append(comments, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("tasks: list comments rows: %w", err)
+	}
+	return comments, nil
+}

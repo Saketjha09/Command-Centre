@@ -349,3 +349,90 @@ func HandleDashboardMetrics(pool *pgxpool.Pool, cfg *config.Config) http.Handler
 		writeJSON(w, http.StatusOK, metrics)
 	}
 }
+
+// HandleCreateComment handles POST /api/v1/tasks/{id}/comments (any authenticated user).
+func HandleCreateComment(pool *pgxpool.Pool, hub WSBroadcaster) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		taskID := r.PathValue("id")
+
+		claims, ok := auth.ClaimsFromContext(r.Context())
+		if !ok {
+			slog.Error("tasks: HandleCreateComment: missing claims in context")
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+
+		// Decode request body.
+		var req struct {
+			Body string `json:"body"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+
+		// Validate body.
+		body := strings.TrimSpace(req.Body)
+		if body == "" {
+			writeError(w, http.StatusBadRequest, "body is required")
+			return
+		}
+		if len(body) > 2000 {
+			writeError(w, http.StatusBadRequest, "body must be at most 2000 characters")
+			return
+		}
+
+		comment, err := CreateComment(r.Context(), pool, taskID, claims.UserID, body)
+		if err != nil {
+			slog.Error("tasks: create comment", "task_id", taskID, "error", err)
+			writeError(w, http.StatusInternalServerError, "failed to create comment")
+			return
+		}
+
+		writeJSON(w, http.StatusCreated, comment)
+
+		// Fire-and-forget WS broadcast — after HTTP response is written.
+		go func(c Comment) {
+			if err := hub.BroadcastToRole("admin", "task:comment_added", c); err != nil {
+				slog.Error("ws: task:comment_added admin", "error", err)
+			}
+			if err := hub.BroadcastToRole("superadmin", "task:comment_added", c); err != nil {
+				slog.Error("ws: task:comment_added superadmin", "error", err)
+			}
+			// Fetch task to get assignee — runs outside request ctx.
+			task, err := getTaskByID(context.Background(), pool, taskID, nil)
+			if err != nil {
+				slog.Error("ws: task:comment_added fetch assignee", "task_id", taskID, "error", err)
+				return
+			}
+			if task.AssignedTo != nil {
+				if err := hub.BroadcastToUser(*task.AssignedTo, "task:comment_added", c); err != nil {
+					slog.Error("ws: task:comment_added user", "user_id", *task.AssignedTo, "error", err)
+				}
+			}
+		}(comment)
+	}
+}
+
+// HandleListComments handles GET /api/v1/tasks/{id}/comments (any authenticated user).
+func HandleListComments(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		taskID := r.PathValue("id")
+
+		// Auth check — claims extracted but not used beyond access control.
+		if _, ok := auth.ClaimsFromContext(r.Context()); !ok {
+			slog.Error("tasks: HandleListComments: missing claims in context")
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+
+		comments, err := ListComments(r.Context(), pool, taskID, 50)
+		if err != nil {
+			slog.Error("tasks: list comments", "task_id", taskID, "error", err)
+			writeError(w, http.StatusInternalServerError, "failed to list comments")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, comments)
+	}
+}

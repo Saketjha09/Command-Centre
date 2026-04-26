@@ -61,5 +61,13 @@ func RegisterRoutes(mux *http.ServeMux, pool *pgxpool.Pool, cfg *config.Config, 
 	// Dashboard metrics — admin and superadmin only.
 	mux.Handle("GET /api/v1/dashboard/metrics",
 		adminOnly(http.HandlerFunc(HandleDashboardMetrics(pool, cfg))))
+
+	// Post a comment on a task — any authenticated user.
+	mux.Handle("POST /api/v1/tasks/{id}/comments",
+		authOnly(http.HandlerFunc(HandleCreateComment(pool, hub))))
+
+	// List comments on a task — any authenticated user.
+	mux.Handle("GET /api/v1/tasks/{id}/comments",
+		authOnly(http.HandlerFunc(HandleListComments(pool))))
 }
 

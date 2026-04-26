@@ -103,3 +103,13 @@ type UserMetrics struct {
 type DashboardMetricsResponse struct {
 	Metrics []UserMetrics `json:"metrics"`
 }
+
+// Comment represents a single message left on a task.
+type Comment struct {
+	ID         string    `json:"id"`
+	TaskID     string    `json:"task_id"`
+	AuthorID   string    `json:"author_id"`
+	AuthorName string    `json:"author_name"`
+	Body       string    `json:"body"`
+	CreatedAt  time.Time `json:"created_at"`
+}
