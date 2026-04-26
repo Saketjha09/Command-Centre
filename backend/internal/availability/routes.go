@@ -39,7 +39,7 @@ func RegisterRoutes(mux *http.ServeMux, pool *pgxpool.Pool, cfg *config.Config, 
 	mux.Handle("POST /api/v1/availability",
 		authOnly(http.HandlerFunc(HandleSetAvailable(pool, cfg, hub))))
 	mux.Handle("DELETE /api/v1/availability",
-		authOnly(http.HandlerFunc(HandleSetOffline(pool, cfg))))
+		authOnly(http.HandlerFunc(HandleSetOffline(pool, cfg, hub))))
 
 	// 2. Wildcard routes
 	mux.Handle("GET /api/v1/availability/{userID}",

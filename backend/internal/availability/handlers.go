@@ -3,18 +3,17 @@ package availability
 import (
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/saket/command-center/backend/internal/auth"
 	"github.com/saket/command-center/backend/internal/ws"
 	"github.com/saket/command-center/backend/pkg/config"
-	"log/slog"
-	"time"
 )
 
 // ── JSON helpers ─────────────────────────────────────────────────────────────
@@ -41,7 +40,7 @@ func HandleUpsertAvailability(pool *pgxpool.Pool, cfg *config.Config) http.Handl
 
 		claims, ok := auth.ClaimsFromContext(r.Context())
 		if !ok {
-			log.Printf("availability: HandleUpsertAvailability: missing claims in context")
+			slog.Error("availability: HandleUpsertAvailability: missing claims in context")
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
@@ -60,7 +59,7 @@ func HandleUpsertAvailability(pool *pgxpool.Pool, cfg *config.Config) http.Handl
 			case errors.Is(err, ErrUnauthorized):
 				writeError(w, http.StatusForbidden, "access denied")
 			default:
-				log.Printf("availability: upsert(%s, %s): %v", userID, date, err)
+				slog.Error("availability: upsert", "user_id", userID, "date", date, "error", err)
 				writeError(w, http.StatusInternalServerError, "failed to upsert availability")
 			}
 			return
@@ -86,7 +85,7 @@ func HandleGetUserAvailability(pool *pgxpool.Pool, cfg *config.Config) http.Hand
 
 		claims, ok := auth.ClaimsFromContext(r.Context())
 		if !ok {
-			log.Printf("availability: HandleGetUserAvailability: missing claims in context")
+			slog.Error("availability: HandleGetUserAvailability: missing claims in context")
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
@@ -97,7 +96,7 @@ func HandleGetUserAvailability(pool *pgxpool.Pool, cfg *config.Config) http.Hand
 			case errors.Is(err, ErrUnauthorized):
 				writeError(w, http.StatusForbidden, "access denied")
 			default:
-				log.Printf("availability: get user(%s): %v", userID, err)
+				slog.Error("availability: get user", "user_id", userID, "error", err)
 				writeError(w, http.StatusInternalServerError, "failed to get availability")
 			}
 			return
@@ -113,14 +112,14 @@ func HandleGetTodayAvailability(pool *pgxpool.Pool, cfg *config.Config) http.Han
 	return func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := auth.ClaimsFromContext(r.Context())
 		if !ok {
-			log.Printf("availability: HandleGetTodayAvailability: missing claims in context")
+			slog.Error("availability: HandleGetTodayAvailability: missing claims in context")
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
 
 		records, err := GetTodayAllUsers(pool, claims)
 		if err != nil {
-			log.Printf("availability: get today all: %v", err)
+			slog.Error("availability: get today all", "error", err)
 			writeError(w, http.StatusInternalServerError, "failed to get today's availability")
 			return
 		}
@@ -149,7 +148,7 @@ func HandleSetAvailable(pool *pgxpool.Pool, cfg *config.Config, hub *ws.Hub) htt
 			if errors.Is(err, ErrValidation) {
 				writeError(w, http.StatusBadRequest, err.Error())
 			} else {
-				log.Printf("availability: set available: %v", err)
+				slog.Error("availability: set available", "error", err)
 				writeError(w, http.StatusInternalServerError, "failed to update availability")
 			}
 			return
@@ -158,28 +157,20 @@ func HandleSetAvailable(pool *pgxpool.Pool, cfg *config.Config, hub *ws.Hub) htt
 		writeJSON(w, http.StatusOK, result)
 
 		go func() {
-			if err := hub.BroadcastToRole(
-				"admin",
-				"availability:updated",
-				result,
-			); err != nil {
-				slog.Error("ws: failed to broadcast availability update",
-					"error", err)
+			if err := hub.BroadcastToRole("admin", "availability:updated", result); err != nil {
+				slog.Error("ws: failed to broadcast availability update", "error", err)
 			}
-			if err := hub.BroadcastToRole(
-				"superadmin",
-				"availability:updated",
-				result,
-			); err != nil {
-				slog.Error("ws: failed to broadcast availability update",
-					"error", err)
+			if err := hub.BroadcastToRole("superadmin", "availability:updated", result); err != nil {
+				slog.Error("ws: failed to broadcast availability update", "error", err)
 			}
 		}()
 	}
 }
 
 // HandleSetOffline handles DELETE /api/v1/availability.
-func HandleSetOffline(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
+// Returns the updated record (status='off') so clients can update state
+// without a separate fetch. Broadcasts to admin/superadmin via WebSocket.
+func HandleSetOffline(pool *pgxpool.Pool, cfg *config.Config, hub *ws.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := auth.ClaimsFromContext(r.Context())
 		if !ok {
@@ -193,17 +184,27 @@ func HandleSetOffline(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 			return
 		}
 
-		if err := SetSlotOffline(pool, claims, req.Date, req.Slot); err != nil {
+		result, err := SetSlotOffline(pool, claims, req.Date, req.Slot)
+		if err != nil {
 			if errors.Is(err, ErrValidation) {
 				writeError(w, http.StatusBadRequest, err.Error())
 			} else {
-				log.Printf("availability: set offline: %v", err)
+				slog.Error("availability: set offline", "error", err)
 				writeError(w, http.StatusInternalServerError, "failed to update availability")
 			}
 			return
 		}
 
-		w.WriteHeader(http.StatusNoContent)
+		writeJSON(w, http.StatusOK, result)
+
+		go func() {
+			if err := hub.BroadcastToRole("admin", "availability:updated", result); err != nil {
+				slog.Error("ws: failed to broadcast availability update", "error", err)
+			}
+			if err := hub.BroadcastToRole("superadmin", "availability:updated", result); err != nil {
+				slog.Error("ws: failed to broadcast availability update", "error", err)
+			}
+		}()
 	}
 }
 
@@ -218,7 +219,7 @@ func HandleGetAdminAvailabilityGrid(pool *pgxpool.Pool, cfg *config.Config) http
 
 		response, err := GetAdminAvailabilityGrid(r.Context(), pool, time.Now().UTC())
 		if err != nil {
-			slog.Error("failed to fetch availability grid", "error", err, "path", r.URL.Path, "user_id", claims.UserID)
+			slog.Error("availability: get grid", "error", err, "path", r.URL.Path, "user_id", claims.UserID)
 			writeError(w, http.StatusInternalServerError, "failed to fetch availability grid")
 			return
 		}

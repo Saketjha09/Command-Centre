@@ -1,6 +1,7 @@
 package availability
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -28,6 +29,14 @@ var validSlots = map[string]bool{
 	"night":   true,
 }
 
+// validClientStatuses are the status values a client may explicitly set.
+// StatusBusyTask is excluded — it is set only by the task-assignment system.
+var validClientStatuses = map[AvailabilityStatus]bool{
+	StatusAvailable:  true,
+	StatusBusyManual: true,
+	StatusOff:        true,
+}
+
 // ── constants ────────────────────────────────────────────────────────────────
 
 const (
@@ -37,15 +46,13 @@ const (
 
 // ── service functions ────────────────────────────────────────────────────────
 
-// UpsertAvailability validates the request, enforces authorization and the
-// admin day-slot override rule, then upserts each slot via the repository.
+// UpsertAvailability validates the request, enforces authorization, then
+// upserts each slot via the repository.
 //
 // Business rules encoded here:
 //   - Freelancers can only upsert their own availability.
 //   - Admins/superadmins can upsert for any user.
-//   - When claims.Role == "admin" and a "day" slot is included, IsAvailable
-//     is forced to false (10 AM – 3 PM intern class block).
-//   - Superadmins are exempt from the day-slot override.
+//   - StatusBusyTask cannot be set by any client — rejected at validation.
 func UpsertAvailability(
 	pool *pgxpool.Pool,
 	claims *authutil.TokenClaims,
@@ -68,6 +75,9 @@ func UpsertAvailability(
 			return DayAvailability{}, fmt.Errorf("%w: duplicate slot %q", ErrValidation, s.Slot)
 		}
 		seen[s.Slot] = true
+		if !validClientStatuses[s.Status] {
+			return DayAvailability{}, fmt.Errorf("%w: invalid status %q for slot %q", ErrValidation, s.Status, s.Slot)
+		}
 	}
 
 	parsedDate, err := time.Parse("2006-01-02", dateStr)
@@ -95,25 +105,12 @@ func UpsertAvailability(
 
 	records := make([]AvailabilityRecord, 0, len(req.Slots))
 	for _, s := range req.Slots {
-		isAvail := s.IsAvailable
-
-		// Removed intern/admin day-slot override: 10 AM – 3 PM class block.
-		// isAvail is now always determined by the request payload.
-
-		rec, err := upsertSlot(pool, targetUserID, dateStr, s.Slot, isAvail, s.Comment)
+		rec, err := upsertSlot(pool, targetUserID, dateStr, s.Slot, s.Status, s.Comment)
 		if err != nil {
 			return DayAvailability{}, fmt.Errorf("availability: upsert slot %q: %w", s.Slot, err)
 		}
-
-		// Compute status for the returned record
-		booked, _ := getBookedDates(pool, targetUserID, parsedDate, parsedDate)
-		rec.Status = "offline"
-		if booked[dateStr] {
-			rec.Status = "booked"
-		} else if rec.IsAvailable {
-			rec.Status = "available"
-		}
-
+		// Status is authoritative from the DB RETURNING clause.
+		// No post-upsert recomputation needed.
 		records = append(records, rec)
 	}
 
@@ -159,43 +156,23 @@ func GetUserAvailability(
 		return WeekAvailability{}, fmt.Errorf("availability: get user: %w", err)
 	}
 
-	bookedDates, err := getBookedDates(pool, targetUserID, from, to)
-	if err != nil {
-		return WeekAvailability{}, fmt.Errorf("availability: check booked: %w", err)
-	}
-
-	// ── Group by date and Fill Gaps ────────────────────────────────────────
+	// ── Group by date ─────────────────────────────────────────────────────
 
 	dayMap := make(map[string][]AvailabilityRecord)
 	for _, r := range records {
-		// Compute status for existing record
-		r.Status = "offline"
-		if bookedDates[r.Date] {
-			r.Status = "booked"
-		} else if r.IsAvailable {
-			r.Status = "available"
-		}
+		// Status is read directly from the DB column; no recomputation needed.
 		dayMap[r.Date] = append(dayMap[r.Date], r)
 	}
 
 	daysList := make([]DayAvailability, 0, days)
 	for i := 0; i < days; i++ {
 		dateStr := from.AddDate(0, 0, i).Format("2006-01-02")
-		
+
 		slots := dayMap[dateStr]
 		if slots == nil {
 			slots = []AvailabilityRecord{}
 		}
-		
-		// If no slots exist for this day, but it's booked, we should still show it as booked?
-		// Actually, if no record exists, the user said it's 'offline'.
-		// But if they have a task, they are 'booked'.
-		// Let's ensure slots are populated even if empty in DB if it's booked.
-		if len(slots) == 0 {
-			// No records in DB for this day.
-			// We could return a dummy record with status 'offline' or 'booked' if needed.
-		}
-		
+
 		daysList = append(daysList, DayAvailability{
 			Date:   dateStr,
 			UserID: targetUserID,
@@ -213,7 +190,7 @@ func GetUserAvailability(
 // Admin/superadmin see all; freelancers see only their own.
 func GetTodayAllUsers(pool *pgxpool.Pool, claims *authutil.TokenClaims) ([]AvailabilityRecord, error) {
 	today := time.Now().UTC().Format("2006-01-02")
-	
+
 	var filterUserID string
 	if claims.Role == "freelancer" {
 		filterUserID = claims.UserID
@@ -224,20 +201,7 @@ func GetTodayAllUsers(pool *pgxpool.Pool, claims *authutil.TokenClaims) ([]Avail
 		return nil, fmt.Errorf("availability: get today all: %w", err)
 	}
 
-	// For each record, compute status.
-	// This might be expensive for many users, but fine for now.
-	for i := range records {
-		parsedDate, _ := time.Parse("2006-01-02", today)
-		booked, _ := getBookedDates(pool, records[i].UserID, parsedDate, parsedDate)
-		
-		records[i].Status = "offline"
-		if booked[today] {
-			records[i].Status = "booked"
-		} else if records[i].IsAvailable {
-			records[i].Status = "available"
-		}
-	}
-
+	// Status is read directly from the DB column — no per-record recomputation needed.
 	return records, nil
 }
 
@@ -247,50 +211,40 @@ type ToggleRequest struct {
 	Slot string `json:"slot"`
 }
 
+// SetSlotAvailable marks a slot as available for the calling user.
 func SetSlotAvailable(pool *pgxpool.Pool, claims *authutil.TokenClaims, date, slot string) (AvailabilityRecord, error) {
-	// Authorization: Freelancers can only set their own availability.
 	userID := claims.UserID
 
-	// Validation
 	if !validSlots[slot] {
 		return AvailabilityRecord{}, fmt.Errorf("%w: invalid slot %q", ErrValidation, slot)
 	}
-	
-	parsedDate, err := time.Parse("2006-01-02", date)
-	if err != nil {
+
+	if _, err := time.Parse("2006-01-02", date); err != nil {
 		return AvailabilityRecord{}, fmt.Errorf("%w: invalid date format", ErrValidation)
 	}
 
-	// Removed intern/admin day-slot override
-	isAvail := true
-
-	rec, err := upsertSlot(pool, userID, date, slot, isAvail, "")
-	if err != nil {
-		return AvailabilityRecord{}, err
-	}
-
-	// Compute status
-	booked, _ := getBookedDates(pool, userID, parsedDate, parsedDate)
-	rec.Status = "offline"
-	if booked[date] {
-		rec.Status = "booked"
-	} else if rec.IsAvailable {
-		rec.Status = "available"
-	}
-
-	return rec, nil
+	return upsertSlot(pool, userID, date, slot, StatusAvailable, "")
 }
 
-func SetSlotOffline(pool *pgxpool.Pool, claims *authutil.TokenClaims, date, slot string) error {
+// SetSlotOffline marks a slot as explicitly offline for the calling user.
+// This upserts status='off' rather than deleting the row, preserving the
+// distinction between 'off' (explicitly unavailable) and 'unknown' (no row set).
+func SetSlotOffline(pool *pgxpool.Pool, claims *authutil.TokenClaims, date, slot string) (AvailabilityRecord, error) {
 	userID := claims.UserID
 
 	if !validSlots[slot] {
-		return fmt.Errorf("%w: invalid slot %q", ErrValidation, slot)
+		return AvailabilityRecord{}, fmt.Errorf("%w: invalid slot %q", ErrValidation, slot)
 	}
 
-	return deleteSlot(pool, userID, date, slot)
+	if _, err := time.Parse("2006-01-02", date); err != nil {
+		return AvailabilityRecord{}, fmt.Errorf("%w: invalid date format", ErrValidation)
+	}
+
+	return upsertSlot(pool, userID, date, slot, StatusOff, "")
 }
 
+// GetAdminAvailabilityGrid builds the 14-day exhaustive slot matrix for all
+// active freelancers, used by the admin availability grid UI.
 func GetAdminAvailabilityGrid(ctx context.Context, pool *pgxpool.Pool, today time.Time) (AdminGridResponse, error) {
 	from := today.Truncate(24 * time.Hour)
 	to := from.AddDate(0, 0, 13)
@@ -325,7 +279,7 @@ func GetAdminAvailabilityGrid(ctx context.Context, pool *pgxpool.Pool, today tim
 
 		if row.Date != nil && row.Slot != nil {
 			if userMap[row.UserID][*row.Date] == nil {
-				userMap[row.UserID][*row.Date] = make(map[string]map[string]SlotGridDetail)
+				userMap[row.UserID][*row.Date] = make(map[string]SlotGridDetail)
 			}
 			userMap[row.UserID][*row.Date][*row.Slot] = SlotGridDetail{
 				Status:    row.Status,
@@ -335,13 +289,13 @@ func GetAdminAvailabilityGrid(ctx context.Context, pool *pgxpool.Pool, today tim
 		}
 	}
 
-	// 3. Build the exhaustive matrix
+	// 3. Build the exhaustive matrix — every user x date x slot combination
 	editors := make([]EditorGridDetail, 0, len(order))
 	slots := []string{"night", "day", "evening"}
 
 	for _, u := range order {
 		editorDays := make(map[string]map[string]SlotGridDetail)
-		
+
 		for _, dateStr := range dateStrings {
 			daySlots := make(map[string]SlotGridDetail)
 			for _, s := range slots {
@@ -349,7 +303,7 @@ func GetAdminAvailabilityGrid(ctx context.Context, pool *pgxpool.Pool, today tim
 					daySlots[s] = detail
 				} else {
 					daySlots[s] = SlotGridDetail{
-						Status:    "unknown",
+						Status:    string(StatusUnknown),
 						Note:      "",
 						TaskCount: 0,
 					}

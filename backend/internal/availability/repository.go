@@ -3,6 +3,7 @@ package availability
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -15,15 +16,17 @@ var ErrNoRecords = errors.New("availability: no records found")
 // ── column lists ─────────────────────────────────────────────────────────────
 
 // returnCols are used in RETURNING / SELECT clauses.
-// date and slot are cast to text to avoid pgtype enum scanning.
-const returnCols = "id, user_id, date::text, slot::text, is_available, COALESCE(comment, ''), created_at"
+// date, slot, and status are cast to text to avoid pgtype enum scanning.
+const returnCols = "id, user_id, date::text, slot::text, status::text, COALESCE(comment, ''), created_at"
 
 // ── scan helper ──────────────────────────────────────────────────────────────
 
 // scanRecord scans a single row into an AvailabilityRecord.
 func scanRecord(row pgx.Row) (AvailabilityRecord, error) {
 	var r AvailabilityRecord
-	err := row.Scan(&r.ID, &r.UserID, &r.Date, &r.Slot, &r.IsAvailable, &r.Comment, &r.CreatedAt)
+	var status string
+	err := row.Scan(&r.ID, &r.UserID, &r.Date, &r.Slot, &status, &r.Comment, &r.CreatedAt)
+	r.Status = AvailabilityStatus(status)
 	return r, err
 }
 
@@ -33,9 +36,11 @@ func scanRecords(rows pgx.Rows) ([]AvailabilityRecord, error) {
 	records := make([]AvailabilityRecord, 0)
 	for rows.Next() {
 		var r AvailabilityRecord
-		if err := rows.Scan(&r.ID, &r.UserID, &r.Date, &r.Slot, &r.IsAvailable, &r.Comment, &r.CreatedAt); err != nil {
+		var status string
+		if err := rows.Scan(&r.ID, &r.UserID, &r.Date, &r.Slot, &status, &r.Comment, &r.CreatedAt); err != nil {
 			return nil, err
 		}
+		r.Status = AvailabilityStatus(status)
 		records = append(records, r)
 	}
 	return records, rows.Err()
@@ -46,18 +51,25 @@ func scanRecords(rows pgx.Rows) ([]AvailabilityRecord, error) {
 // upsertSlot inserts or updates a single availability slot.
 // Uses INSERT ... ON CONFLICT DO UPDATE to guarantee atomicity —
 // never DELETE + INSERT, which risks partial failures leaving gaps.
-func upsertSlot(pool *pgxpool.Pool, userID, date, slot string, isAvailable bool, comment string) (AvailabilityRecord, error) {
+//
+// StatusBusyTask is reserved for the task-assignment system and cannot
+// be set by any caller of this function.
+func upsertSlot(pool *pgxpool.Pool, userID, date, slot string, status AvailabilityStatus, comment string) (AvailabilityRecord, error) {
+	if status == StatusBusyTask {
+		return AvailabilityRecord{}, fmt.Errorf("availability: status %q cannot be set manually", StatusBusyTask)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	query := `
-		INSERT INTO ops.availability (user_id, date, slot, is_available, comment)
-		VALUES ($1, $2::date, $3::ops.availability_slot, $4, $5)
+		INSERT INTO ops.availability (user_id, date, slot, status, comment)
+		VALUES ($1, $2::date, $3::ops.availability_slot, $4::ops.availability_status, $5)
 		ON CONFLICT (user_id, date, slot)
-		DO UPDATE SET is_available = EXCLUDED.is_available, comment = EXCLUDED.comment
+		DO UPDATE SET status = EXCLUDED.status, comment = EXCLUDED.comment
 		RETURNING ` + returnCols
 
-	row := pool.QueryRow(ctx, query, userID, date, slot, isAvailable, comment)
+	row := pool.QueryRow(ctx, query, userID, date, slot, string(status), comment)
 	return scanRecord(row)
 }
 
@@ -113,7 +125,7 @@ func getAllAvailabilityForDate(pool *pgxpool.Pool, date, filterUserID string) ([
 		SELECT ` + returnCols + `
 		FROM ops.availability
 		WHERE date = $1::date`
-	
+
 	args := []any{date}
 	if filterUserID != "" {
 		query += ` AND user_id = $2`
@@ -132,7 +144,7 @@ func getAllAvailabilityForDate(pool *pgxpool.Pool, date, filterUserID string) ([
 }
 
 // getBookedDates returns a map of dates (YYYY-MM-DD) on which the user
-// has at least one task with status 'in_progress' or 'review'.
+// has at least one task with status 'in_progress' or 'in_review'.
 func getBookedDates(pool *pgxpool.Pool, userID string, from, to time.Time) (map[string]bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -142,7 +154,7 @@ func getBookedDates(pool *pgxpool.Pool, userID string, from, to time.Time) (map[
 		FROM ops.tasks
 		WHERE assigned_to = $1 
 		  AND deadline >= $2 AND deadline <= $3
-		  AND status IN ('in_progress', 'review')`
+		  AND status IN ('in_progress', 'in_review')`
 
 	rows, err := pool.Query(ctx, query, userID, from, to)
 	if err != nil {
@@ -194,10 +206,8 @@ func GetAvailabilityGridData(ctx context.Context, pool *pgxpool.Pool, from, to t
 			a.date::text, 
 			a.slot::text, 
 			CASE 
-				WHEN t.task_count > 0 THEN 'booked'
-				WHEN a.is_available = true THEN 'available'
-				WHEN a.is_available = false THEN 'offline'
-				ELSE 'unknown'
+				WHEN t.task_count > 0 THEN 'busy_task'
+				ELSE COALESCE(a.status::text, 'unknown')
 			END AS status,
 			COALESCE(a.comment, '') AS note,
 			COALESCE(t.task_count, 0) AS task_count
@@ -208,7 +218,7 @@ func GetAvailabilityGridData(ctx context.Context, pool *pgxpool.Pool, from, to t
 		LEFT JOIN (
 			SELECT assigned_to, deadline::date AS task_date, COUNT(*) AS task_count
 			FROM ops.tasks
-			WHERE status IN ('in_progress', 'review')
+			WHERE status IN ('in_progress', 'in_review')
 			GROUP BY assigned_to, deadline::date
 		) t ON t.assigned_to = u.id AND t.task_date = a.date
 		WHERE u.role = 'freelancer' 
@@ -226,7 +236,7 @@ func GetAvailabilityGridData(ctx context.Context, pool *pgxpool.Pool, from, to t
 	for rows.Next() {
 		var r AdminGridRow
 		if err := rows.Scan(
-			&r.UserID, &r.DisplayName, &r.PhotoURL, 
+			&r.UserID, &r.DisplayName, &r.PhotoURL,
 			&r.Date, &r.Slot, &r.Status, &r.Note, &r.TaskCount,
 		); err != nil {
 			return nil, err
