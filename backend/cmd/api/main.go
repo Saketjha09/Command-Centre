@@ -34,10 +34,15 @@ func corsMiddleware(allowedOrigins string) func(http.Handler) http.Handler {
 			allowed := strings.Split(allowedOrigins, ",")
 			
 			matched := false
-			for _, o := range allowed {
-				if strings.TrimSpace(o) == origin && origin != "" {
-					matched = true
-					break
+			// In development, we can be more lenient with localhost
+			if origin != "" && (strings.HasPrefix(origin, "http://localhost:") || strings.HasPrefix(origin, "http://127.0.0.1:")) {
+				matched = true
+			} else {
+				for _, o := range allowed {
+					if strings.TrimSpace(o) == origin && origin != "" {
+						matched = true
+						break
+					}
 				}
 			}
 
@@ -45,7 +50,7 @@ func corsMiddleware(allowedOrigins string) func(http.Handler) http.Handler {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 				w.Header().Set("Access-Control-Allow-Credentials", "true")
 				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Cookie")
 			}
 
 			// Handle OPTIONS preflight
@@ -57,6 +62,16 @@ func corsMiddleware(allowedOrigins string) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func slashMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Only strip for non-root paths that have a trailing slash
+		if r.URL.Path != "/" && strings.HasSuffix(r.URL.Path, "/") {
+			r.URL.Path = strings.TrimSuffix(r.URL.Path, "/")
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func main() {
@@ -96,7 +111,7 @@ func main() {
 
 	// User listing — any authenticated user.
 	mux.Handle("GET /api/v1/users",
-		middleware.Authenticate(cfg)(http.HandlerFunc(auth.HandleListUsers(pool, cfg))))
+		auth.Authenticate(cfg)(http.HandlerFunc(auth.HandleListUsers(pool, cfg))))
 
 	// Rate limit auth mutation endpoints — 10 req/min per IP
 	loginRateLimit := middleware.RateLimit(10, time.Minute)
@@ -123,14 +138,23 @@ func main() {
 	mux.HandleFunc("GET /api/v1/ws", ws.HandleWebSocket(hub, cfg))
 
 	// Serve static files from uploads directory
-	mux.Handle("GET /uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir("uploads"))))
+	// Serve static files from uploads directory with security headers
+	staticHeaders := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Disposition", "attachment")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.Header().Set("Content-Security-Policy", "default-src 'none'")
+			next.ServeHTTP(w, r)
+		})
+	}
+	mux.Handle("GET /uploads/", http.StripPrefix("/uploads/", staticHeaders(http.FileServer(http.Dir("uploads")))))
 
 	// -------------------------------------------------------------------------
 	// 4. Construct the HTTP server.
 	// -------------------------------------------------------------------------
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           corsMiddleware(cfg.AllowedOrigins)(middleware.SecurityHeaders(mux)),
+		Handler:           corsMiddleware(cfg.AllowedOrigins)(slashMiddleware(middleware.SecurityHeaders(mux))),
 		ReadTimeout:       15 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,   // slow-loris fix
 		WriteTimeout:      15 * time.Second,

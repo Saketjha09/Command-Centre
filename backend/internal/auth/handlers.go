@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,10 +11,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/saket/command-center/backend/pkg/authutil"
 	"github.com/saket/command-center/backend/pkg/config"
 )
 
@@ -48,7 +51,7 @@ func HandleRegister(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 			return
 		}
 
-		user, err := Register(pool, cfg, req)
+		user, err := Register(r.Context(), pool, cfg, req)
 		if err != nil {
 			switch {
 			case errors.Is(err, ErrEmailTaken):
@@ -68,6 +71,45 @@ func HandleRegister(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 	}
 }
 
+// HandleCreateAdminUser handles POST /api/v1/auth/admin/users.
+// Only accessible by superadmins (enforced by middleware).
+func HandleCreateAdminUser(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := authutil.ClaimsFromContext(r.Context())
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
+		actorID, _ := uuid.Parse(claims.UserID)
+
+		var req struct {
+			Name     string `json:"name"`
+			Email    string `json:"email"`
+			Password string `json:"password"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+
+		user, err := CreateAdminUser(r.Context(), pool, actorID, req.Name, req.Email, req.Password)
+		if err != nil {
+			switch {
+			case errors.Is(err, ErrEmailTaken):
+				writeError(w, http.StatusConflict, "email already registered")
+			case errors.Is(err, ErrValidation):
+				writeError(w, http.StatusBadRequest, err.Error())
+			default:
+				log.Printf("create admin: unexpected error: %v", err)
+				writeError(w, http.StatusInternalServerError, "failed to create admin user")
+			}
+			return
+		}
+
+		writeJSON(w, http.StatusCreated, user)
+	}
+}
+
 // HandleLogin handles POST /api/v1/auth/login.
 // On success, sets httpOnly secure cookies for access_token and refresh_token.
 // 401 on bad credentials. 500 on unexpected server errors.
@@ -79,7 +121,7 @@ func HandleLogin(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 			return
 		}
 
-		accessToken, refreshToken, user, err := Login(pool, cfg, req)
+		accessToken, refreshToken, user, err := Login(r.Context(), pool, cfg, req)
 		if err != nil {
 			if errors.Is(err, ErrInvalidCredentials) {
 				writeError(w, http.StatusUnauthorized, "invalid credentials")
@@ -112,7 +154,11 @@ func HandleLogin(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 			Path:     cookiePathRefresh,
 		})
 
-		writeJSON(w, http.StatusOK, user)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"user":          user,
+			"access_token":  accessToken,
+			"refresh_token": refreshToken,
+		})
 	}
 }
 
@@ -121,21 +167,12 @@ func HandleLogin(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 // live user row from the DB, and returns a client-safe UserResponse.
 func HandleMe(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// 1. Read access token from cookie.
-		cookie, err := r.Cookie("access_token")
-		if err != nil {
-			writeError(w, http.StatusUnauthorized, "missing access token")
+		claims, ok := ClaimsFromContext(r.Context())
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "authentication required")
 			return
 		}
 
-		// 2. Parse and validate the JWT.
-		claims, err := ValidateAccessToken(cfg, cookie.Value)
-		if err != nil {
-			writeError(w, http.StatusUnauthorized, "invalid or expired token")
-			return
-		}
-
-		// 3. Parse the UserID UUID from claims.
 		userID, err := uuid.Parse(claims.UserID)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, "malformed token claims")
@@ -143,7 +180,7 @@ func HandleMe(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 		}
 
 		// 4. Fetch live user — not from token (tokens can lag behind role changes).
-		row, err := GetUserByID(context.Background(), pool, userID)
+		row, err := GetUserByID(r.Context(), pool, userID)
 		if err != nil {
 			if errors.Is(err, ErrUserNotFound) {
 				// User was deleted after the token was issued.
@@ -208,15 +245,9 @@ func HandleListUsers(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 // HandleUpdateProfile handles PATCH /api/v1/auth/me.
 func HandleUpdateProfile(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie("access_token")
-		if err != nil {
-			writeError(w, http.StatusUnauthorized, "missing access token")
-			return
-		}
-
-		claims, err := ValidateAccessToken(cfg, cookie.Value)
-		if err != nil {
-			writeError(w, http.StatusUnauthorized, "invalid or expired token")
+		claims, ok := ClaimsFromContext(r.Context())
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "authentication required")
 			return
 		}
 
@@ -245,22 +276,27 @@ func HandleUpdateProfile(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFun
 // HandleUploadAvatar handles POST /api/v1/auth/avatar.
 func HandleUploadAvatar(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie("access_token")
-		if err != nil {
-			writeError(w, http.StatusUnauthorized, "missing access token")
+		claims, ok := ClaimsFromContext(r.Context())
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "authentication required")
 			return
 		}
 
-		claims, err := ValidateAccessToken(cfg, cookie.Value)
+		userID, err := uuid.Parse(claims.UserID)
 		if err != nil {
-			writeError(w, http.StatusUnauthorized, "invalid or expired token")
+			writeError(w, http.StatusInternalServerError, "invalid user session")
 			return
 		}
 
-		userID, _ := uuid.Parse(claims.UserID)
+		// 1. Apply MaxBytesReader FIRST (2MB limit)
+		r.Body = http.MaxBytesReader(w, r.Body, 2<<20)
 
-		// 1MB max file size
-		r.ParseMultipartForm(1 << 20)
+		// 2. Call ParseMultipartForm after the size cap is set
+		if err := r.ParseMultipartForm(2 << 20); err != nil {
+			writeError(w, http.StatusBadRequest, "file too large or invalid form")
+			return
+		}
+
 		file, header, err := r.FormFile("avatar")
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "no file uploaded")
@@ -268,28 +304,74 @@ func HandleUploadAvatar(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc
 		}
 		defer file.Close()
 
-		// Ensure directory exists
-		uploadDir := filepath.Join("uploads", "avatars")
-		os.MkdirAll(uploadDir, 0755)
+		// 3. Read first 512 bytes to detect real MIME type
+		buf := make([]byte, 512)
+		n, err := file.Read(buf)
+		if err != nil && err != io.EOF {
+			writeError(w, http.StatusInternalServerError, "failed to read file")
+			return
+		}
+		buf = buf[:n]
+		mimeType := http.DetectContentType(buf)
 
-		// Create unique filename
-		ext := filepath.Ext(header.Filename)
+		// 4. Validate mimeType against whitelist
+		allowedMime := map[string]bool{
+			"image/jpeg": true,
+			"image/png":  true,
+			"image/webp": true,
+		}
+		if !allowedMime[mimeType] {
+			writeError(w, http.StatusBadRequest, "invalid file type: only jpg, png, and webp are allowed")
+			return
+		}
+
+		// 5. Validate file extension (case-insensitive)
+		ext := strings.ToLower(filepath.Ext(header.Filename))
+		allowedExt := map[string]bool{
+			".jpg":  true,
+			".jpeg": true,
+			".png":  true,
+			".webp": true,
+		}
+		if !allowedExt[ext] {
+			writeError(w, http.StatusBadRequest, "invalid file extension")
+			return
+		}
+
+		// 6. Save the file using temp file + atomic rename
+		uploadDir := filepath.Join("uploads", "avatars")
+		if err := os.MkdirAll(uploadDir, 0755); err != nil {
+			log.Printf("auth: avatar mkdir: %v", err)
+			writeError(w, http.StatusInternalServerError, "failed to prepare storage")
+			return
+		}
+
+		// 7. Filename saved to disk must be userID + extension only
 		filename := fmt.Sprintf("%s%s", userID.String(), ext)
 		savePath := filepath.Join(uploadDir, filename)
 		publicURL := fmt.Sprintf("/uploads/avatars/%s", filename)
 
-		// Save to disk
-		out, err := os.Create(savePath)
+		tmpFile, err := os.CreateTemp(uploadDir, "avatar-*.tmp")
 		if err != nil {
-			log.Printf("auth: avatar upload: %v", err)
-			writeError(w, http.StatusInternalServerError, "failed to save avatar")
+			log.Printf("auth: avatar temp create: %v", err)
+			writeError(w, http.StatusInternalServerError, "failed to process avatar")
 			return
 		}
-		defer out.Close()
+		tmpPath := tmpFile.Name()
+		defer os.Remove(tmpPath)
 
-		if _, err := io.Copy(out, file); err != nil {
+		fullReader := io.MultiReader(bytes.NewReader(buf), file)
+		if _, err := io.Copy(tmpFile, fullReader); err != nil {
+			tmpFile.Close()
 			log.Printf("auth: avatar copy: %v", err)
 			writeError(w, http.StatusInternalServerError, "failed to process avatar")
+			return
+		}
+		tmpFile.Close()
+
+		if err := os.Rename(tmpPath, savePath); err != nil {
+			log.Printf("auth: avatar rename: %v", err)
+			writeError(w, http.StatusInternalServerError, "failed to save avatar")
 			return
 		}
 
