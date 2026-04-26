@@ -6,7 +6,8 @@ import {
   AvailabilitySlot, 
   FreelancerDayState, 
   SlotState, 
-  SlotInput 
+  SlotInput,
+  SlotStatus
 } from '../types/availability';
 
 /**
@@ -67,25 +68,27 @@ export function useFreelancerAvailability() {
     loadAvailability();
   }, [loadAvailability]);
 
-  // 3. toggleSlot: Flip availability and update derived status
+  // 3. toggleSlot: Cycle through three states
+  // unknown → available → off → unknown
   const toggleSlot = useCallback((date: string, slotKey: AvailabilitySlot) => {
     setDays(prev => prev.map(day => {
       if (day.date !== date) return day;
-      
+
       const slot = day.slots[slotKey];
       if (slot.isLocked) return day;
 
-      const nextIsAvailable = !slot.is_available;
+      // Three-state cycle: unknown → available → off → unknown
+      const nextStatus: SlotStatus =
+        slot.status === 'unknown'   ? 'available' :
+        slot.status === 'available' ? 'off' :
+                                      'unknown';
+
       return {
         ...day,
         isDirty: true,
         slots: {
           ...day.slots,
-          [slotKey]: {
-            ...slot,
-            is_available: nextIsAvailable,
-            status: nextIsAvailable ? 'available' : 'offline'
-          }
+          [slotKey]: { ...slot, status: nextStatus }
         }
       };
     }));
@@ -128,11 +131,11 @@ export function useFreelancerAvailability() {
     if (!daySnapshot) return;
     setError(null);
     
-    const slotInputs: SlotInput[] = 
+    const slotInputs: SlotInput[] =
       (['night', 'day', 'evening'] as AvailabilitySlot[])
       .map(key => ({
         slot: key,
-        is_available: daySnapshot!.slots[key].is_available,
+        status: daySnapshot!.slots[key].status,
         comment: daySnapshot!.slots[key].comment,
       }));
     
@@ -163,12 +166,12 @@ export function useFreelancerAvailability() {
 
 /**
  * Helper to build SlotState from DB records or defaults.
+ * status is read directly from the DB — no boolean derivation.
  */
 function createSlotState(slotKey: AvailabilitySlot, records: AvailabilityRecord[]): SlotState {
   const record = records.find(r => r.slot === slotKey);
   if (!record) {
     return {
-      is_available: false,
       comment: '',
       status: 'unknown',
       isLocked: false
@@ -176,9 +179,8 @@ function createSlotState(slotKey: AvailabilitySlot, records: AvailabilityRecord[
   }
 
   return {
-    is_available: record.is_available,
     comment: record.comment,
     status: record.status,
-    isLocked: record.status === 'booked'
+    isLocked: record.status === 'busy_task'
   };
 }
