@@ -6,6 +6,7 @@ import { LoadingSpinner } from '../components/LoadingSpinner'
 import type { TaskSummary } from '../types/task'
 import type { AvailabilityRecord } from '../types/availability'
 import type { Brand } from '../types/brand'
+import { AdminAvailabilityGrid } from '../components/availability/AdminAvailabilityGrid'
 
 interface Props {
   onNavigate: (view: string) => void
@@ -343,6 +344,12 @@ export function DashboardPage({ onNavigate }: Props) {
            </section>
         </div>
       </div>
+
+      {/* 14-Day Availability Overview */}
+      <section className="flex flex-col gap-5 mt-10">
+        <h2 className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.2em]">Team Availability (14-Day Grid)</h2>
+        <AdminAvailabilityGrid />
+      </section>
     </div>
   )
 }
