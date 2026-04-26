@@ -131,7 +131,7 @@ func main() {
 	tasks.RegisterRoutes(mux, pool, cfg, hub)
 
 	// Availability domain: upsert, per-user lookahead, daily dashboard grid.
-	availability.RegisterRoutes(mux, pool, cfg)
+	availability.RegisterRoutes(mux, pool, cfg, hub)
 
 	// Brands domain: dynamic brand management.
 	brands.RegisterRoutes(mux, pool, cfg)

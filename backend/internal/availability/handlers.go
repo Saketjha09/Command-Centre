@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/saket/command-center/backend/internal/auth"
+	"github.com/saket/command-center/backend/internal/ws"
 	"github.com/saket/command-center/backend/pkg/config"
 	"log/slog"
 	"time"
@@ -129,7 +130,7 @@ func HandleGetTodayAvailability(pool *pgxpool.Pool, cfg *config.Config) http.Han
 }
 
 // HandleSetAvailable handles POST /api/v1/availability.
-func HandleSetAvailable(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
+func HandleSetAvailable(pool *pgxpool.Pool, cfg *config.Config, hub *ws.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := auth.ClaimsFromContext(r.Context())
 		if !ok {
@@ -155,6 +156,25 @@ func HandleSetAvailable(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc
 		}
 
 		writeJSON(w, http.StatusOK, result)
+
+		go func() {
+			if err := hub.BroadcastToRole(
+				"admin",
+				"availability:updated",
+				result,
+			); err != nil {
+				slog.Error("ws: failed to broadcast availability update",
+					"error", err)
+			}
+			if err := hub.BroadcastToRole(
+				"superadmin",
+				"availability:updated",
+				result,
+			); err != nil {
+				slog.Error("ws: failed to broadcast availability update",
+					"error", err)
+			}
+		}()
 	}
 }
 

@@ -23,6 +23,10 @@ const (
 type Client struct {
 	conn *websocket.Conn
 
+	// Role is the user's role extracted from JWT (e.g. "admin", "freelancer").
+	// Set once at connection time.
+	Role string
+
 	// send is a buffered channel of outbound JSON frames.
 	// Hub writes here; writePump drains it.
 	send chan []byte

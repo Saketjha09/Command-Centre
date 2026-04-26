@@ -39,7 +39,8 @@ func HandleWebSocket(hub *Hub, cfg *config.Config) http.HandlerFunc {
 		}
 		token := cookie.Value
 
-		if _, err := auth.ValidateAccessToken(cfg, token); err != nil {
+		claims, err := auth.ValidateAccessToken(cfg, token)
+		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid or expired token"})
@@ -56,7 +57,11 @@ func HandleWebSocket(hub *Hub, cfg *config.Config) http.HandlerFunc {
 
 		// ── Step 3: Register client and start read/write pumps ────────────────
 
-		client := &Client{conn: conn, send: make(chan []byte, 256)}
+		client := &Client{
+			conn: conn,
+			send: make(chan []byte, 256),
+			Role: string(claims.Role),
+		}
 		hub.register <- client
 
 		// writePump runs in a dedicated goroutine — it must be the sole writer.

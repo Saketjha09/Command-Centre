@@ -6,6 +6,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/saket/command-center/backend/internal/auth"
+	"github.com/saket/command-center/backend/internal/ws"
 	"github.com/saket/command-center/backend/pkg/authutil"
 	"github.com/saket/command-center/backend/pkg/config"
 	"github.com/saket/command-center/backend/pkg/middleware"
@@ -18,7 +19,7 @@ import (
 // the wildcard "/api/v1/availability/{userID}" to ensure Go's router
 // matches the more specific literal path first. Go 1.22 gives precedence
 // to non-wildcard patterns, but explicit ordering makes the intent clear.
-func RegisterRoutes(mux *http.ServeMux, pool *pgxpool.Pool, cfg *config.Config) {
+func RegisterRoutes(mux *http.ServeMux, pool *pgxpool.Pool, cfg *config.Config, hub *ws.Hub) {
 	authOnly := middleware.Chain(
 		auth.Authenticate(cfg),
 	)
@@ -36,7 +37,7 @@ func RegisterRoutes(mux *http.ServeMux, pool *pgxpool.Pool, cfg *config.Config) 
 		authOnly(http.HandlerFunc(HandleGetTodayAvailability(pool, cfg))))
 
 	mux.Handle("POST /api/v1/availability",
-		authOnly(http.HandlerFunc(HandleSetAvailable(pool, cfg))))
+		authOnly(http.HandlerFunc(HandleSetAvailable(pool, cfg, hub))))
 	mux.Handle("DELETE /api/v1/availability",
 		authOnly(http.HandlerFunc(HandleSetOffline(pool, cfg))))
 

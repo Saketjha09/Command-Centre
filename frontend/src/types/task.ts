@@ -55,6 +55,6 @@ export interface TaskDetail {
 
 // WSMessage is the shape of every message pushed over the WebSocket.
 export interface WSMessage {
-  type: 'task.created' | 'task.assigned' | 'task.status_changed'
-  payload: TaskSummary
+  type: 'task.created' | 'task.assigned' | 'task.status_changed' | 'availability:updated'
+  payload: unknown
 }

@@ -18,6 +18,12 @@ type Message struct {
 	Payload interface{} `json:"payload"`
 }
 
+// envelope wraps the marshalled data and an optional role filter.
+type envelope struct {
+	data     []byte
+	roleOnly string
+}
+
 // Hub maintains the set of active WebSocket clients and fans out broadcasts.
 // All fields are private — access is mediated exclusively by Run().
 type Hub struct {
@@ -27,8 +33,8 @@ type Hub struct {
 	// unregister is sent a client pointer by readPump on disconnect.
 	unregister chan *Client
 
-	// broadcast is sent a pre-serialised JSON frame by Broadcast().
-	broadcast chan []byte
+	// broadcast is sent an envelope by Broadcast() or BroadcastToRole().
+	broadcast chan envelope
 
 	// clients is the live set; touched ONLY inside Run().
 	clients map[*Client]bool
@@ -39,7 +45,7 @@ func NewHub() *Hub {
 	return &Hub{
 		register:   make(chan *Client, 16),
 		unregister: make(chan *Client, 16),
-		broadcast:  make(chan []byte, 256),
+		broadcast:  make(chan envelope, 256),
 		clients:    make(map[*Client]bool),
 	}
 }
@@ -59,13 +65,15 @@ func (h *Hub) Run() {
 				close(client.send)
 			}
 
-		case msg := <-h.broadcast:
+		case env := <-h.broadcast:
 			for client := range h.clients {
+				if env.roleOnly != "" && client.Role != env.roleOnly {
+					continue
+				}
 				select {
-				case client.send <- msg:
+				case client.send <- env.data:
 				default:
 					// Client's outbound buffer is full — consider it dead.
-					// Deleting from a map during range is safe in Go.
 					close(client.send)
 					delete(h.clients, client)
 				}
@@ -74,21 +82,44 @@ func (h *Hub) Run() {
 	}
 }
 
-// Broadcast marshals a typed message envelope and queues it for fan-out.
+// Broadcast marshals a typed message envelope and queues it for fan-out to all clients.
 // It implements tasks.WSBroadcaster so *Hub can be passed to tasks.RegisterRoutes.
 // Non-blocking: if the internal buffer is full the message is dropped and logged.
 func (h *Hub) Broadcast(msgType string, payload interface{}) error {
-	msg := Message{Type: msgType, Payload: payload}
-	data, err := json.Marshal(msg)
+	data, err := h.marshal(msgType, payload)
 	if err != nil {
-		return fmt.Errorf("ws: marshal broadcast %q: %w", msgType, err)
+		return err
 	}
 
 	select {
-	case h.broadcast <- data:
+	case h.broadcast <- envelope{data: data, roleOnly: ""}:
 	default:
-		// Hub buffer full — drop rather than block the HTTP handler goroutine.
 		log.Printf("ws: broadcast buffer full, dropping %q event", msgType)
 	}
 	return nil
+}
+
+// BroadcastToRole marshals a typed message envelope and queues it for role-filtered fan-out.
+// Non-blocking: if the internal buffer is full the message is dropped and logged.
+func (h *Hub) BroadcastToRole(role string, msgType string, payload interface{}) error {
+	data, err := h.marshal(msgType, payload)
+	if err != nil {
+		return err
+	}
+
+	select {
+	case h.broadcast <- envelope{data: data, roleOnly: role}:
+	default:
+		log.Printf("ws: broadcast buffer full, dropping %q event for role %q", msgType, role)
+	}
+	return nil
+}
+
+func (h *Hub) marshal(msgType string, payload interface{}) ([]byte, error) {
+	msg := Message{Type: msgType, Payload: payload}
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return nil, fmt.Errorf("ws: marshal broadcast %q: %w", msgType, err)
+	}
+	return data, nil
 }
