@@ -26,6 +26,10 @@ var (
 	// even under concurrent requests because the check runs inside a
 	// SELECT FOR UPDATE transaction.
 	ErrAlreadyAssigned = errors.New("tasks: task already has an assignee")
+
+	// ErrForbidden is returned when a user attempts an action on a task
+	// they do not own or a transition not permitted for their role.
+	ErrForbidden = errors.New("tasks: insufficient permissions for this action")
 )
 
 const dbTimeout = 5 * time.Second
@@ -144,10 +148,7 @@ func assignTask(_ context.Context, pool *pgxpool.Pool, taskID, userID, performin
 
 // TransitionStatus validates the status transition via the state machine, then
 // applies the update and logs the action in a transaction.
-func transitionStatus(_ context.Context, pool *pgxpool.Pool, taskID, newStatus, performingUserID string) (TaskDetail, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
-	defer cancel()
-
+func transitionStatus(ctx context.Context, pool *pgxpool.Pool, taskID, newStatus string, claims *authutil.TokenClaims) (TaskDetail, error) {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return TaskDetail{}, fmt.Errorf("tasks: begin transition tx: %w", err)
@@ -157,8 +158,26 @@ func transitionStatus(_ context.Context, pool *pgxpool.Pool, taskID, newStatus, 
 	const selectQ = `SELECT` + detailCols + ` FROM ops.tasks WHERE id = $1 FOR UPDATE`
 	current, err := scanTaskDetail(tx.QueryRow(ctx, selectQ, taskID))
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) { return TaskDetail{}, ErrTaskNotFound }
+		if errors.Is(err, pgx.ErrNoRows) {
+			return TaskDetail{}, ErrTaskNotFound
+		}
 		return TaskDetail{}, fmt.Errorf("tasks: lock task for status: %w", err)
+	}
+
+	// --- Role-based Permission Layer ---
+	if claims.Role == authutil.RoleFreelancer {
+		// 1. Ownership Check: Freelancers can only touch tasks assigned to them.
+		if current.AssignedTo == nil || *current.AssignedTo != claims.UserID {
+			return TaskDetail{}, ErrForbidden
+		}
+
+		// 2. Transition Restriction: Only allow assigned → in_progress and in_progress → in_review.
+		isAllowed := (current.Status == TaskStatusAssigned && newStatus == string(TaskStatusInProgress)) ||
+			(current.Status == TaskStatusInProgress && newStatus == string(TaskStatusInReview))
+
+		if !isAllowed {
+			return TaskDetail{}, ErrForbidden
+		}
 	}
 
 	if err := ValidateTransition(current.Status, newStatus); err != nil {
@@ -177,7 +196,7 @@ func transitionStatus(_ context.Context, pool *pgxpool.Pool, taskID, newStatus, 
 	}
 
 	// Log transition
-	if err := logTaskAction(ctx, tx, taskID, performingUserID, "status_change", &current.Status, &newStatus); err != nil {
+	if err := logTaskAction(ctx, tx, taskID, claims.UserID, "status_change", &current.Status, &newStatus); err != nil {
 		return TaskDetail{}, fmt.Errorf("tasks: log transition history: %w", err)
 	}
 

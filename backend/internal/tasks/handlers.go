@@ -233,7 +233,7 @@ func HandleTransitionStatus(pool *pgxpool.Pool, cfg *config.Config, hub WSBroadc
 
 		claims, ok := auth.ClaimsFromContext(r.Context())
 		if !ok {
-			log.Printf("tasks: HandleTransitionStatus: missing claims in context")
+			slog.Error("tasks: HandleTransitionStatus: missing claims", "path", r.URL.Path)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
@@ -244,13 +244,15 @@ func HandleTransitionStatus(pool *pgxpool.Pool, cfg *config.Config, hub WSBroadc
 			return
 		}
 
-		task, err := TransitionStatus(pool, claims, id, req.Status)
+		task, err := TransitionStatus(r.Context(), pool, claims, id, req.Status)
 		if err != nil {
 			switch {
 			case errors.Is(err, ErrTaskNotFound):
 				writeError(w, http.StatusNotFound, "task not found")
+			case errors.Is(err, ErrForbidden):
+				writeError(w, http.StatusForbidden, "insufficient permissions")
 			case errors.Is(err, ErrInvalidTransition):
-				writeError(w, http.StatusUnprocessableEntity, "invalid status transition")
+				writeError(w, http.StatusBadRequest, "invalid status transition")
 			case errors.Is(err, ErrValidation):
 				// Strip the internal sentinel prefix; send only the human-readable message.
 				writeError(w, http.StatusBadRequest, strings.TrimPrefix(err.Error(), ErrValidation.Error()+": "))
