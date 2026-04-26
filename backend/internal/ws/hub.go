@@ -22,6 +22,7 @@ type Message struct {
 type envelope struct {
 	data     []byte
 	roleOnly string
+	userOnly string
 }
 
 // Hub maintains the set of active WebSocket clients and fans out broadcasts.
@@ -70,6 +71,9 @@ func (h *Hub) Run() {
 				if env.roleOnly != "" && client.Role != env.roleOnly {
 					continue
 				}
+				if env.userOnly != "" && client.UserID != env.userOnly {
+					continue
+				}
 				select {
 				case client.send <- env.data:
 				default:
@@ -111,6 +115,22 @@ func (h *Hub) BroadcastToRole(role string, msgType string, payload interface{}) 
 	case h.broadcast <- envelope{data: data, roleOnly: role}:
 	default:
 		log.Printf("ws: broadcast buffer full, dropping %q event for role %q", msgType, role)
+	}
+	return nil
+}
+
+// BroadcastToUser marshals a typed message envelope and queues it for user-filtered fan-out.
+// Non-blocking: if the internal buffer is full the message is dropped and logged.
+func (h *Hub) BroadcastToUser(userID string, msgType string, payload interface{}) error {
+	data, err := h.marshal(msgType, payload)
+	if err != nil {
+		return err
+	}
+
+	select {
+	case h.broadcast <- envelope{data: data, userOnly: userID}:
+	default:
+		log.Printf("ws: broadcast buffer full, dropping %q event for user %q", msgType, userID)
 	}
 	return nil
 }

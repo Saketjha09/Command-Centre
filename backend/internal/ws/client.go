@@ -23,6 +23,9 @@ const (
 type Client struct {
 	conn *websocket.Conn
 
+	// UserID is the unique identifier of the connected user.
+	UserID string
+
 	// Role is the user's role extracted from JWT (e.g. "admin", "freelancer").
 	// Set once at connection time.
 	Role string

@@ -10,6 +10,8 @@ package tasks
 //     no explicit declaration required.
 type WSBroadcaster interface {
 	Broadcast(msgType string, payload interface{}) error
+	BroadcastToRole(role string, msgType string, payload interface{}) error
+	BroadcastToUser(userID string, msgType string, payload interface{}) error
 }
 
 // BroadcastTaskCreated sends a "task.created" event to all WebSocket clients.

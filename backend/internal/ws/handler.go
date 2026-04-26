@@ -58,9 +58,10 @@ func HandleWebSocket(hub *Hub, cfg *config.Config) http.HandlerFunc {
 		// ── Step 3: Register client and start read/write pumps ────────────────
 
 		client := &Client{
-			conn: conn,
-			send: make(chan []byte, 256),
-			Role: string(claims.Role),
+			conn:   conn,
+			send:   make(chan []byte, 256),
+			UserID: claims.UserID,
+			Role:   string(claims.Role),
 		}
 		hub.register <- client
 

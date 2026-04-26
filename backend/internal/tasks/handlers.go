@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -153,7 +154,19 @@ func HandleAssignTask(pool *pgxpool.Pool, cfg *config.Config, hub WSBroadcaster)
 			return
 		}
 
-		BroadcastTaskAssigned(hub, task)
+		go func(t TaskDetail) {
+			if err := hub.BroadcastToRole("admin", "task:assigned", t); err != nil {
+				slog.Error("ws: task:assigned admin", "error", err)
+			}
+			if err := hub.BroadcastToRole("superadmin", "task:assigned", t); err != nil {
+				slog.Error("ws: task:assigned superadmin", "error", err)
+			}
+			if t.AssignedTo != nil {
+				if err := hub.BroadcastToUser(*t.AssignedTo, "task:assigned", t); err != nil {
+					slog.Error("ws: task:assigned user", "user_id", *t.AssignedTo, "error", err)
+				}
+			}
+		}(task)
 		writeJSON(w, http.StatusOK, task)
 
 		// Fire notification AFTER the HTTP response is written — truly fire-and-forget.
@@ -226,7 +239,14 @@ func HandleTransitionStatus(pool *pgxpool.Pool, cfg *config.Config, hub WSBroadc
 			return
 		}
 
-		BroadcastStatusChanged(hub, task)
+		go func(t TaskDetail) {
+			if err := hub.BroadcastToRole("admin", "task:status_changed", t); err != nil {
+				slog.Error("ws: task:status_changed admin", "error", err)
+			}
+			if err := hub.BroadcastToRole("superadmin", "task:status_changed", t); err != nil {
+				slog.Error("ws: task:status_changed superadmin", "error", err)
+			}
+		}(task)
 		writeJSON(w, http.StatusOK, task)
 	}
 }
