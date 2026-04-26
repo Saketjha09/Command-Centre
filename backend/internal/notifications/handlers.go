@@ -8,27 +8,114 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/saket/command-center/backend/internal/auth"
 	"github.com/saket/command-center/backend/internal/pkg/sheets"
 	"github.com/saket/command-center/backend/pkg/config"
 	"github.com/saket/command-center/backend/pkg/middleware"
 )
 
-// RegisterRoutes registers notification trigger endpoints.
-func RegisterRoutes(mux *http.ServeMux, pool *pgxpool.Pool, cfg *config.Config) {
-	// POST /api/v1/notifications/slack/ping/{userID}
-	adminOnly := middleware.RequireRole("admin", "superadmin")
-	mux.Handle("POST /api/v1/notifications/slack/ping/{id}",
-		middleware.Authenticate(cfg)(adminOnly(http.HandlerFunc(HandleSlackPing(pool, cfg)))))
+// HandleListNotifications returns the most recent notifications for the authenticated user.
+func HandleListNotifications(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := auth.ClaimsFromContext(r.Context())
+		if !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
 
-	// Public Webhook (Secured by Signature Verification)
-	mux.HandleFunc("POST /api/v1/notifications/slack/interactive", HandleSlackInteractive(pool, cfg))
+		notifications, err := ListNotifications(r.Context(), pool, claims.UserID, 50)
+		if err != nil {
+			slog.Error("notifications: list failed", "error", err, "user_id", claims.UserID)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
+		// Ensure we return an empty array instead of null
+		if notifications == nil {
+			notifications = []Notification{}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(notifications)
+	}
 }
+
+// HandleGetUnreadCount returns the count of unread notifications for the authenticated user.
+func HandleGetUnreadCount(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := auth.ClaimsFromContext(r.Context())
+		if !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		count, err := GetUnreadCount(r.Context(), pool, claims.UserID)
+		if err != nil {
+			slog.Error("notifications: unread count failed", "error", err, "user_id", claims.UserID)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]int{"count": count})
+	}
+}
+
+// HandleMarkAsRead marks a single notification as read.
+func HandleMarkAsRead(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := auth.ClaimsFromContext(r.Context())
+		if !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		idStr := r.PathValue("id")
+		notifID, err := uuid.Parse(idStr)
+		if err != nil {
+			http.Error(w, "invalid id", http.StatusBadRequest)
+			return
+		}
+
+		err = MarkAsRead(r.Context(), pool, notifID, claims.UserID)
+		if err != nil {
+			// Security: Return 404 to avoid leaking existence of notifications for other users
+			http.Error(w, "notification not found", http.StatusNotFound)
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// HandleMarkAllAsRead marks all unread notifications for the user as read.
+func HandleMarkAllAsRead(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := auth.ClaimsFromContext(r.Context())
+		if !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		err := MarkAllAsRead(r.Context(), pool, claims.UserID)
+		if err != nil {
+			slog.Error("notifications: mark all read failed", "error", err, "user_id", claims.UserID)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+
 
 // VerifySlackSignature implements Slack's request signing verification.
 // https://api.slack.com/authentication/verifying-requests-from-slack
@@ -152,7 +239,7 @@ func HandleSlackPing(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 		id := r.PathValue("id")
 
 		// Verify sender context (extra check)
-		_, ok := middleware.ClaimsFromContext(r.Context())
+		_, ok := auth.ClaimsFromContext(r.Context())
 		if !ok {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
