@@ -10,8 +10,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/saket/command-center/backend/internal/auth"
 	"github.com/saket/command-center/backend/pkg/config"
-	"github.com/saket/command-center/backend/pkg/middleware"
+	"log/slog"
+	"time"
 )
 
 // ── JSON helpers ─────────────────────────────────────────────────────────────
@@ -36,7 +38,7 @@ func HandleUpsertAvailability(pool *pgxpool.Pool, cfg *config.Config) http.Handl
 		userID := r.PathValue("userID")
 		date := r.PathValue("date")
 
-		claims, ok := middleware.ClaimsFromContext(r.Context())
+		claims, ok := auth.ClaimsFromContext(r.Context())
 		if !ok {
 			log.Printf("availability: HandleUpsertAvailability: missing claims in context")
 			writeError(w, http.StatusInternalServerError, "internal error")
@@ -81,7 +83,7 @@ func HandleGetUserAvailability(pool *pgxpool.Pool, cfg *config.Config) http.Hand
 			}
 		}
 
-		claims, ok := middleware.ClaimsFromContext(r.Context())
+		claims, ok := auth.ClaimsFromContext(r.Context())
 		if !ok {
 			log.Printf("availability: HandleGetUserAvailability: missing claims in context")
 			writeError(w, http.StatusInternalServerError, "internal error")
@@ -108,7 +110,7 @@ func HandleGetUserAvailability(pool *pgxpool.Pool, cfg *config.Config) http.Hand
 // Admin/superadmin see all; freelancers see only their own.
 func HandleGetTodayAvailability(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		claims, ok := middleware.ClaimsFromContext(r.Context())
+		claims, ok := auth.ClaimsFromContext(r.Context())
 		if !ok {
 			log.Printf("availability: HandleGetTodayAvailability: missing claims in context")
 			writeError(w, http.StatusInternalServerError, "internal error")
@@ -123,5 +125,84 @@ func HandleGetTodayAvailability(pool *pgxpool.Pool, cfg *config.Config) http.Han
 		}
 
 		writeJSON(w, http.StatusOK, records)
+	}
+}
+
+// HandleSetAvailable handles POST /api/v1/availability.
+func HandleSetAvailable(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := auth.ClaimsFromContext(r.Context())
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		var req ToggleRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+
+		result, err := SetSlotAvailable(pool, claims, req.Date, req.Slot)
+		if err != nil {
+			if errors.Is(err, ErrValidation) {
+				writeError(w, http.StatusBadRequest, err.Error())
+			} else {
+				log.Printf("availability: set available: %v", err)
+				writeError(w, http.StatusInternalServerError, "failed to update availability")
+			}
+			return
+		}
+
+		writeJSON(w, http.StatusOK, result)
+	}
+}
+
+// HandleSetOffline handles DELETE /api/v1/availability.
+func HandleSetOffline(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := auth.ClaimsFromContext(r.Context())
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		var req ToggleRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+
+		if err := SetSlotOffline(pool, claims, req.Date, req.Slot); err != nil {
+			if errors.Is(err, ErrValidation) {
+				writeError(w, http.StatusBadRequest, err.Error())
+			} else {
+				log.Printf("availability: set offline: %v", err)
+				writeError(w, http.StatusInternalServerError, "failed to update availability")
+			}
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// HandleGetAdminAvailabilityGrid handles GET /api/v1/availability/grid.
+func HandleGetAdminAvailabilityGrid(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := auth.ClaimsFromContext(r.Context())
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		response, err := GetAdminAvailabilityGrid(r.Context(), pool, time.Now().UTC())
+		if err != nil {
+			slog.Error("failed to fetch availability grid", "error", err, "path", r.URL.Path, "user_id", claims.UserID)
+			writeError(w, http.StatusInternalServerError, "failed to fetch availability grid")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, response)
 	}
 }

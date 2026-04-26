@@ -7,7 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/saket/command-center/backend/internal/auth"
+	"github.com/saket/command-center/backend/pkg/authutil"
 )
 
 // ── sentinel errors ──────────────────────────────────────────────────────────
@@ -48,7 +48,7 @@ const (
 //   - Superadmins are exempt from the day-slot override.
 func UpsertAvailability(
 	pool *pgxpool.Pool,
-	claims *auth.TokenClaims,
+	claims *authutil.TokenClaims,
 	targetUserID, dateStr string,
 	req UpsertAvailabilityRequest,
 ) (DayAvailability, error) {
@@ -97,16 +97,23 @@ func UpsertAvailability(
 	for _, s := range req.Slots {
 		isAvail := s.IsAvailable
 
-		// Intern/admin day-slot override: 10 AM – 3 PM class block.
-		// Superadmins are exempt — they manage the system, not content.
-		if claims.Role == "admin" && s.Slot == "day" {
-			isAvail = false
-		}
+		// Removed intern/admin day-slot override: 10 AM – 3 PM class block.
+		// isAvail is now always determined by the request payload.
 
 		rec, err := upsertSlot(pool, targetUserID, dateStr, s.Slot, isAvail, s.Comment)
 		if err != nil {
 			return DayAvailability{}, fmt.Errorf("availability: upsert slot %q: %w", s.Slot, err)
 		}
+
+		// Compute status for the returned record
+		booked, _ := getBookedDates(pool, targetUserID, parsedDate, parsedDate)
+		rec.Status = "offline"
+		if booked[dateStr] {
+			rec.Status = "booked"
+		} else if rec.IsAvailable {
+			rec.Status = "available"
+		}
+
 		records = append(records, rec)
 	}
 
@@ -123,7 +130,7 @@ func UpsertAvailability(
 // Authorization: freelancers can only read their own availability.
 func GetUserAvailability(
 	pool *pgxpool.Pool,
-	claims *auth.TokenClaims,
+	claims *authutil.TokenClaims,
 	targetUserID string,
 	days int,
 ) (WeekAvailability, error) {
@@ -152,23 +159,47 @@ func GetUserAvailability(
 		return WeekAvailability{}, fmt.Errorf("availability: get user: %w", err)
 	}
 
-	// ── Group by date ─────────────────────────────────────────────────────
+	bookedDates, err := getBookedDates(pool, targetUserID, from, to)
+	if err != nil {
+		return WeekAvailability{}, fmt.Errorf("availability: check booked: %w", err)
+	}
+
+	// ── Group by date and Fill Gaps ────────────────────────────────────────
 
 	dayMap := make(map[string][]AvailabilityRecord)
-	dateOrder := make([]string, 0)
 	for _, r := range records {
-		if _, exists := dayMap[r.Date]; !exists {
-			dateOrder = append(dateOrder, r.Date)
+		// Compute status for existing record
+		r.Status = "offline"
+		if bookedDates[r.Date] {
+			r.Status = "booked"
+		} else if r.IsAvailable {
+			r.Status = "available"
 		}
 		dayMap[r.Date] = append(dayMap[r.Date], r)
 	}
 
-	daysList := make([]DayAvailability, 0, len(dateOrder))
-	for _, d := range dateOrder {
+	daysList := make([]DayAvailability, 0, days)
+	for i := 0; i < days; i++ {
+		dateStr := from.AddDate(0, 0, i).Format("2006-01-02")
+		
+		slots := dayMap[dateStr]
+		if slots == nil {
+			slots = []AvailabilityRecord{}
+		}
+		
+		// If no slots exist for this day, but it's booked, we should still show it as booked?
+		// Actually, if no record exists, the user said it's 'offline'.
+		// But if they have a task, they are 'booked'.
+		// Let's ensure slots are populated even if empty in DB if it's booked.
+		if len(slots) == 0 {
+			// No records in DB for this day.
+			// We could return a dummy record with status 'offline' or 'booked' if needed.
+		}
+		
 		daysList = append(daysList, DayAvailability{
-			Date:   d,
+			Date:   dateStr,
 			UserID: targetUserID,
-			Slots:  dayMap[d],
+			Slots:  slots,
 		})
 	}
 
@@ -180,7 +211,7 @@ func GetUserAvailability(
 
 // GetTodayAllUsers returns availability records for today.
 // Admin/superadmin see all; freelancers see only their own.
-func GetTodayAllUsers(pool *pgxpool.Pool, claims *auth.TokenClaims) ([]AvailabilityRecord, error) {
+func GetTodayAllUsers(pool *pgxpool.Pool, claims *authutil.TokenClaims) ([]AvailabilityRecord, error) {
 	today := time.Now().UTC().Format("2006-01-02")
 	
 	var filterUserID string
@@ -192,5 +223,151 @@ func GetTodayAllUsers(pool *pgxpool.Pool, claims *auth.TokenClaims) ([]Availabil
 	if err != nil {
 		return nil, fmt.Errorf("availability: get today all: %w", err)
 	}
+
+	// For each record, compute status.
+	// This might be expensive for many users, but fine for now.
+	for i := range records {
+		parsedDate, _ := time.Parse("2006-01-02", today)
+		booked, _ := getBookedDates(pool, records[i].UserID, parsedDate, parsedDate)
+		
+		records[i].Status = "offline"
+		if booked[today] {
+			records[i].Status = "booked"
+		} else if records[i].IsAvailable {
+			records[i].Status = "available"
+		}
+	}
+
 	return records, nil
+}
+
+// ToggleRequest — body for POST/DELETE /api/v1/availability
+type ToggleRequest struct {
+	Date string `json:"date"`
+	Slot string `json:"slot"`
+}
+
+func SetSlotAvailable(pool *pgxpool.Pool, claims *authutil.TokenClaims, date, slot string) (AvailabilityRecord, error) {
+	// Authorization: Freelancers can only set their own availability.
+	userID := claims.UserID
+
+	// Validation
+	if !validSlots[slot] {
+		return AvailabilityRecord{}, fmt.Errorf("%w: invalid slot %q", ErrValidation, slot)
+	}
+	
+	parsedDate, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		return AvailabilityRecord{}, fmt.Errorf("%w: invalid date format", ErrValidation)
+	}
+
+	// Removed intern/admin day-slot override
+	isAvail := true
+
+	rec, err := upsertSlot(pool, userID, date, slot, isAvail, "")
+	if err != nil {
+		return AvailabilityRecord{}, err
+	}
+
+	// Compute status
+	booked, _ := getBookedDates(pool, userID, parsedDate, parsedDate)
+	rec.Status = "offline"
+	if booked[date] {
+		rec.Status = "booked"
+	} else if rec.IsAvailable {
+		rec.Status = "available"
+	}
+
+	return rec, nil
+}
+
+func SetSlotOffline(pool *pgxpool.Pool, claims *authutil.TokenClaims, date, slot string) error {
+	userID := claims.UserID
+
+	if !validSlots[slot] {
+		return fmt.Errorf("%w: invalid slot %q", ErrValidation, slot)
+	}
+
+	return deleteSlot(pool, userID, date, slot)
+}
+
+func GetAdminAvailabilityGrid(ctx context.Context, pool *pgxpool.Pool, today time.Time) (AdminGridResponse, error) {
+	from := today.Truncate(24 * time.Hour)
+	to := from.AddDate(0, 0, 13)
+
+	rows, err := GetAvailabilityGridData(ctx, pool, from, to)
+	if err != nil {
+		return AdminGridResponse{}, err
+	}
+
+	// 1. Generate the 14 date strings
+	dateStrings := make([]string, 14)
+	for i := 0; i < 14; i++ {
+		dateStrings[i] = from.AddDate(0, 0, i).Format("2006-01-02")
+	}
+
+	// 2. Group flat rows by UserID
+	type userOrder struct {
+		id    string
+		name  string
+		photo *string
+	}
+	var order []userOrder
+	userMap := make(map[string]map[string]map[string]SlotGridDetail)
+	seenUsers := make(map[string]bool)
+
+	for _, row := range rows {
+		if !seenUsers[row.UserID] {
+			seenUsers[row.UserID] = true
+			order = append(order, userOrder{row.UserID, row.DisplayName, row.PhotoURL})
+			userMap[row.UserID] = make(map[string]map[string]SlotGridDetail)
+		}
+
+		if row.Date != nil && row.Slot != nil {
+			if userMap[row.UserID][*row.Date] == nil {
+				userMap[row.UserID][*row.Date] = make(map[string]map[string]SlotGridDetail)
+			}
+			userMap[row.UserID][*row.Date][*row.Slot] = SlotGridDetail{
+				Status:    row.Status,
+				Note:      row.Note,
+				TaskCount: row.TaskCount,
+			}
+		}
+	}
+
+	// 3. Build the exhaustive matrix
+	editors := make([]EditorGridDetail, 0, len(order))
+	slots := []string{"night", "day", "evening"}
+
+	for _, u := range order {
+		editorDays := make(map[string]map[string]SlotGridDetail)
+		
+		for _, dateStr := range dateStrings {
+			daySlots := make(map[string]SlotGridDetail)
+			for _, s := range slots {
+				if detail, ok := userMap[u.id][dateStr][s]; ok {
+					daySlots[s] = detail
+				} else {
+					daySlots[s] = SlotGridDetail{
+						Status:    "unknown",
+						Note:      "",
+						TaskCount: 0,
+					}
+				}
+			}
+			editorDays[dateStr] = daySlots
+		}
+
+		editors = append(editors, EditorGridDetail{
+			ID:       u.id,
+			Name:     u.name,
+			PhotoURL: u.photo,
+			Days:     editorDays,
+		})
+	}
+
+	return AdminGridResponse{
+		Dates:   dateStrings,
+		Editors: editors,
+	}, nil
 }

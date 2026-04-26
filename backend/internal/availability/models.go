@@ -10,6 +10,7 @@ type AvailabilityRecord struct {
 	Date        string    `json:"date"`         // YYYY-MM-DD format
 	Slot        string    `json:"slot"`          // day | evening | night
 	IsAvailable bool      `json:"is_available"`
+	Status      string    `json:"status"`        // offline | available | booked
 	Comment     string    `json:"comment"`
 	CreatedAt   time.Time `json:"created_at"`
 }
@@ -38,4 +39,25 @@ type DayAvailability struct {
 type WeekAvailability struct {
 	UserID string            `json:"user_id"`
 	Days   []DayAvailability `json:"days"`
+}
+
+// AdminGridResponse — response for GET /api/v1/availability/grid.
+type AdminGridResponse struct {
+	Dates   []string           `json:"dates"`
+	Editors []EditorGridDetail `json:"editors"`
+}
+
+// EditorGridDetail — part of AdminGridResponse.
+type EditorGridDetail struct {
+	ID       string                             `json:"id"`
+	Name     string                             `json:"name"`
+	PhotoURL *string                            `json:"photo_url"`
+	Days     map[string]map[string]SlotGridDetail `json:"days"` // date -> slot -> details
+}
+
+// SlotGridDetail — part of EditorGridDetail.
+type SlotGridDetail struct {
+	Status    string `json:"status"`
+	Note      string `json:"note"`
+	TaskCount int    `json:"task_count"`
 }

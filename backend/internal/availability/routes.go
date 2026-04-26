@@ -5,6 +5,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/saket/command-center/backend/internal/auth"
+	"github.com/saket/command-center/backend/pkg/authutil"
 	"github.com/saket/command-center/backend/pkg/config"
 	"github.com/saket/command-center/backend/pkg/middleware"
 )
@@ -18,23 +20,30 @@ import (
 // to non-wildcard patterns, but explicit ordering makes the intent clear.
 func RegisterRoutes(mux *http.ServeMux, pool *pgxpool.Pool, cfg *config.Config) {
 	authOnly := middleware.Chain(
-		middleware.Authenticate(cfg),
+		auth.Authenticate(cfg),
 	)
 
-	// Get today's availability — any authenticated user.
-	// Admin/superadmin see all; freelancers see only their own.
-	// Registered BEFORE the {userID} wildcard to prevent "today" being
-	// captured as a userID.
+	adminOnly := middleware.Chain(
+		auth.Authenticate(cfg),
+		middleware.RequireRole(authutil.RoleAdmin, authutil.RoleSuperAdmin),
+	)
+
+	// 1. Literal routes (Priority)
+	mux.Handle("GET /api/v1/availability/grid",
+		adminOnly(http.HandlerFunc(HandleGetAdminAvailabilityGrid(pool, cfg))))
+
 	mux.Handle("GET /api/v1/availability/today",
 		authOnly(http.HandlerFunc(HandleGetTodayAvailability(pool, cfg))))
 
-	// Upsert availability for a specific user+date — any authenticated user.
-	// Service layer enforces own-only access for freelancers.
-	mux.Handle("PUT /api/v1/availability/{userID}/{date}",
-		authOnly(http.HandlerFunc(HandleUpsertAvailability(pool, cfg))))
+	mux.Handle("POST /api/v1/availability",
+		authOnly(http.HandlerFunc(HandleSetAvailable(pool, cfg))))
+	mux.Handle("DELETE /api/v1/availability",
+		authOnly(http.HandlerFunc(HandleSetOffline(pool, cfg))))
 
-	// Get availability for a specific user (7-day lookahead) — any auth user.
-	// Service layer enforces own-only access for freelancers.
+	// 2. Wildcard routes
 	mux.Handle("GET /api/v1/availability/{userID}",
 		authOnly(http.HandlerFunc(HandleGetUserAvailability(pool, cfg))))
+
+	mux.Handle("PUT /api/v1/availability/{userID}/{date}",
+		authOnly(http.HandlerFunc(HandleUpsertAvailability(pool, cfg))))
 }
