@@ -3,6 +3,8 @@ export interface User {
   name: string
   email: string
   role: 'superadmin' | 'admin' | 'freelancer'
+  is_active: boolean
+  avatar_url?: string
   created_at: string
 }
 

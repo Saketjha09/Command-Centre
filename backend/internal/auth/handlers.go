@@ -386,3 +386,117 @@ func HandleUploadAvatar(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc
 		writeJSON(w, http.StatusOK, userRowToResponse(row))
 	}
 }
+
+// HandleUpdateUserRole handles PATCH /api/v1/auth/admin/users/{id}/role.
+func HandleUpdateUserRole(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := authutil.ClaimsFromContext(r.Context())
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
+
+		targetIDStr := r.PathValue("id")
+		targetID, err := uuid.Parse(targetIDStr)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid user id")
+			return
+		}
+
+		// Security: Cannot target self
+		if targetID.String() == claims.UserID {
+			writeError(w, http.StatusForbidden, "cannot modify your own role")
+			return
+		}
+
+		var req struct {
+			Role string `json:"role"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+
+		// Fetch target user to check current role
+		targetUser, err := GetUserByID(r.Context(), pool, targetID)
+		if err != nil {
+			if errors.Is(err, ErrUserNotFound) {
+				writeError(w, http.StatusNotFound, "user not found")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "failed to fetch user")
+			return
+		}
+
+		// Security: Cannot demote superadmin unless caller is superadmin AND target is not themselves
+		// (Already checked target is not self. Caller is superadmin due to middleware).
+		// We allow this as per rule.
+
+		user, err := UpdateUserRole(r.Context(), pool, targetID, req.Role)
+		if err != nil {
+			if errors.Is(err, ErrValidation) {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "failed to update role")
+			return
+		}
+
+		// Audit Log
+		actorID, _ := uuid.Parse(claims.UserID)
+		_ = CreateAuthAuditLog(r.Context(), pool, actorID, "UPDATE_ROLE", targetID, map[string]any{
+			"old_role": targetUser.Role,
+			"new_role": req.Role,
+		})
+
+		writeJSON(w, http.StatusOK, user)
+	}
+}
+
+// HandleUpdateUserStatus handles PATCH /api/v1/auth/admin/users/{id}/status.
+func HandleUpdateUserStatus(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := authutil.ClaimsFromContext(r.Context())
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
+
+		targetIDStr := r.PathValue("id")
+		targetID, err := uuid.Parse(targetIDStr)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid user id")
+			return
+		}
+
+		// Security: Cannot target self
+		if targetID.String() == claims.UserID {
+			writeError(w, http.StatusForbidden, "cannot deactivate your own account")
+			return
+		}
+
+		var req struct {
+			IsActive bool `json:"is_active"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+
+		user, err := UpdateUserStatus(r.Context(), pool, targetID, req.IsActive)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update status")
+			return
+		}
+
+		// Audit Log
+		actorID, _ := uuid.Parse(claims.UserID)
+		action := "DEACTIVATE_USER"
+		if req.IsActive {
+			action = "ACTIVATE_USER"
+		}
+		_ = CreateAuthAuditLog(r.Context(), pool, actorID, action, targetID, nil)
+
+		writeJSON(w, http.StatusOK, user)
+	}
+}

@@ -1,10 +1,15 @@
 import type { TaskSummary, TaskDetail } from '../types/task'
 import type { Brand } from '../types/brand'
+import type { User } from '../types/auth'
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
 
 // All requests include credentials so the JWT HttpOnly cookie is sent.
 const defaultOptions: RequestInit = { credentials: 'include' }
+
+function getHeaders(extra: Record<string, string> = {}) {
+  return { ...extra }
+}
 
 /**
  * Fetch all tasks, optionally filtered by brand and/or status.
@@ -19,7 +24,10 @@ export async function fetchTasks(
   if (status) params.set('status', status)
 
   const query = params.toString() ? `?${params.toString()}` : ''
-  const res = await fetch(`${BASE_URL}/api/v1/tasks${query}`, defaultOptions)
+  const res = await fetch(`${BASE_URL}/api/v1/tasks${query}`, {
+    ...defaultOptions,
+    headers: getHeaders()
+  })
 
   if (!res.ok) {
     throw new Error(`fetchTasks: ${res.status} ${res.statusText}`)
@@ -32,7 +40,10 @@ export async function fetchTasks(
  * Maps to GET /api/v1/tasks/{id}
  */
 export async function fetchTaskById(taskId: string): Promise<TaskDetail> {
-  const res = await fetch(`${BASE_URL}/api/v1/tasks/${taskId}`, defaultOptions)
+  const res = await fetch(`${BASE_URL}/api/v1/tasks/${taskId}`, {
+    ...defaultOptions,
+    headers: getHeaders()
+  })
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
@@ -53,7 +64,7 @@ export async function transitionTaskStatus(
   const res = await fetch(`${BASE_URL}/api/v1/tasks/${taskId}/status`, {
     ...defaultOptions,
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ status: newStatus }),
   })
 
@@ -80,7 +91,7 @@ export async function createTask(req: {
   const res = await fetch(`${BASE_URL}/api/v1/tasks`, {
     ...defaultOptions,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(req),
   })
 
@@ -100,7 +111,7 @@ export async function assignTask(taskId: string, userId: string): Promise<TaskDe
   const res = await fetch(`${BASE_URL}/api/v1/tasks/${taskId}/assign`, {
     ...defaultOptions,
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ user_id: userId }),
   })
 
@@ -114,24 +125,81 @@ export async function assignTask(taskId: string, userId: string): Promise<TaskDe
 /**
  * Fetch all users via GET /api/v1/users.
  */
-export async function fetchUsers(): Promise<any[]> {
-  const res = await fetch(`${BASE_URL}/api/v1/users`, defaultOptions)
+export async function fetchUsers(): Promise<UserResponse[]> {
+  const res = await fetch(`${BASE_URL}/api/v1/users`, {
+    ...defaultOptions,
+    headers: getHeaders()
+  })
 
   if (!res.ok) {
     const body = await res.text()
     throw new Error(`fetchUsers: ${res.status} — ${body}`)
   }
-  return res.json()
+  return res.json() as Promise<User[]>
+}
+
+/**
+ * Create/Invite a new admin user.
+ */
+export async function inviteUser(data: { name: string; email: string; password?: string }): Promise<User> {
+  const res = await fetch(`${BASE_URL}/api/v1/auth/admin/users`, {
+    ...defaultOptions,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(data),
+  })
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.error || 'Failed to invite user')
+  }
+  return res.json() as Promise<User>
+}
+
+/**
+ * Update a user's role (Superadmin only).
+ */
+export async function updateUserRole(userId: string, role: string): Promise<User> {
+  const res = await fetch(`${BASE_URL}/api/v1/auth/admin/users/${userId}/role`, {
+    ...defaultOptions,
+    method: 'PATCH',
+    headers: getHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ role }),
+  })
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.error || 'Failed to update role')
+  }
+  return res.json() as Promise<User>
+}
+
+/**
+ * Toggle user status (Superadmin only).
+ */
+export async function updateUserStatus(userId: string, isActive: boolean): Promise<User> {
+  const res = await fetch(`${BASE_URL}/api/v1/auth/admin/users/${userId}/status`, {
+    ...defaultOptions,
+    method: 'PATCH',
+    headers: getHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ is_active: isActive }),
+  })
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.error || 'Failed to update status')
+  }
+  return res.json() as Promise<User>
 }
 
 /**
  * Update current user's profile.
  */
-export async function updateProfile(data: { name: string; email: string }): Promise<any> {
+export async function updateProfile(data: { name: string; email: string }): Promise<User> {
   const res = await fetch(`${BASE_URL}/api/v1/auth/me`, {
     ...defaultOptions,
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(data),
   })
 
@@ -139,14 +207,17 @@ export async function updateProfile(data: { name: string; email: string }): Prom
     const body = await res.text()
     throw new Error(`updateProfile: ${res.status} — ${body}`)
   }
-  return res.json()
+  return res.json() as Promise<User>
 }
 
 /**
  * Fetch history for a task.
  */
 export async function fetchTaskHistory(taskId: string): Promise<any[]> {
-  const res = await fetch(`${BASE_URL}/api/v1/tasks/${taskId}/history`, defaultOptions)
+  const res = await fetch(`${BASE_URL}/api/v1/tasks/${taskId}/history`, {
+    ...defaultOptions,
+    headers: getHeaders()
+  })
   if (!res.ok) throw new Error(`fetchTaskHistory: ${res.status}`)
   return res.json()
 }
@@ -154,13 +225,14 @@ export async function fetchTaskHistory(taskId: string): Promise<any[]> {
 /**
  * Upload a profile avatar.
  */
-export async function uploadAvatar(file: File): Promise<any> {
+export async function uploadAvatar(file: File): Promise<User> {
   const formData = new FormData()
   formData.append('avatar', file)
 
   const res = await fetch(`${BASE_URL}/api/v1/auth/avatar`, {
     ...defaultOptions,
     method: 'POST',
+    headers: getHeaders(),
     body: formData,
   })
 
@@ -168,14 +240,17 @@ export async function uploadAvatar(file: File): Promise<any> {
     const body = await res.text()
     throw new Error(`uploadAvatar: ${res.status} — ${body}`)
   }
-  return res.json()
+  return res.json() as Promise<User>
 }
 
 /**
  * Search across tasks and users.
  */
 export async function globalSearch(query: string): Promise<{ results: any[] }> {
-  const res = await fetch(`${BASE_URL}/api/v1/search?q=${encodeURIComponent(query)}`, defaultOptions)
+  const res = await fetch(`${BASE_URL}/api/v1/search?q=${encodeURIComponent(query)}`, {
+    ...defaultOptions,
+    headers: getHeaders()
+  })
   if (!res.ok) throw new Error(`globalSearch: ${res.status}`)
   return res.json()
 }
@@ -184,7 +259,10 @@ export async function globalSearch(query: string): Promise<{ results: any[] }> {
  * Fetch global activity feed.
  */
 export async function fetchGlobalActivity(): Promise<any[]> {
-  const res = await fetch(`${BASE_URL}/api/v1/activity`, defaultOptions)
+  const res = await fetch(`${BASE_URL}/api/v1/activity`, {
+    ...defaultOptions,
+    headers: getHeaders()
+  })
   if (!res.ok) throw new Error(`fetchGlobalActivity: ${res.status}`)
   return res.json()
 }
@@ -193,7 +271,10 @@ export async function fetchGlobalActivity(): Promise<any[]> {
  * Brand management services.
  */
 export async function fetchBrands(): Promise<Brand[]> {
-  const res = await fetch(`${BASE_URL}/api/v1/brands`, defaultOptions)
+  const res = await fetch(`${BASE_URL}/api/v1/brands`, {
+    ...defaultOptions,
+    headers: getHeaders()
+  })
   if (!res.ok) throw new Error(`fetchBrands: ${res.status}`)
   return res.json()
 }
@@ -202,7 +283,7 @@ export async function createBrand(data: { name: string; slug: string; hex_color:
   const res = await fetch(`${BASE_URL}/api/v1/brands`, {
     ...defaultOptions,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(data)
   })
   if (!res.ok) throw new Error(`createBrand: ${res.status}`)
@@ -212,7 +293,8 @@ export async function createBrand(data: { name: string; slug: string; hex_color:
 export async function deleteBrand(id: string): Promise<void> {
   const res = await fetch(`${BASE_URL}/api/v1/brands/${id}`, {
     ...defaultOptions,
-    method: 'DELETE'
+    method: 'DELETE',
+    headers: getHeaders()
   })
   if (!res.ok) throw new Error(`deleteBrand: ${res.status}`)
 }
@@ -221,7 +303,10 @@ export async function deleteBrand(id: string): Promise<void> {
  * Dashboard metrics
  */
 export async function fetchDashboardMetrics(): Promise<{ metrics: any[] }> {
-  const res = await fetch(`${BASE_URL}/api/v1/dashboard/metrics`, defaultOptions)
+  const res = await fetch(`${BASE_URL}/api/v1/dashboard/metrics`, {
+    ...defaultOptions,
+    headers: getHeaders()
+  })
   if (!res.ok) throw new Error(`fetchDashboardMetrics: ${res.status}`)
   return res.json()
 }

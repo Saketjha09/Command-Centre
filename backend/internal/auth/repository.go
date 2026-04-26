@@ -42,27 +42,21 @@ func isTransientDBConnectionError(err error) bool {
 }
 
 // CreateUser inserts a new user into ops.users and returns the persisted row.
-// The passed context is intentionally ignored; a fresh 5-second budget derived
-// from context.Background() is always used so HTTP request cancellations
-// cannot abort a mid-write DB operation.
-func CreateUser(_ context.Context, pool *pgxpool.Pool, req RegisterRequest, hashedPassword string) (UserRow, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
-	defer cancel()
-
+func CreateUser(ctx context.Context, pool *pgxpool.Pool, name, email string, role authutil.Role, hashedPassword string) (UserRow, error) {
 	const q = `
 		INSERT INTO ops.users (name, email, hashed_password, role)
 		VALUES ($1, $2, $3, $4)
-		RETURNING id, name, email, hashed_password, role, slack_user_id, avatar_url, created_at`
+		RETURNING id, name, email, hashed_password, role, slack_user_id, avatar_url, is_active, created_at`
 
 	var row UserRow
-	err := pool.QueryRow(ctx, q, req.Name, req.Email, hashedPassword, req.Role).
+	err := pool.QueryRow(ctx, q, name, email, hashedPassword, string(role)).
 		Scan(&row.ID, &row.Name, &row.Email, &row.HashedPassword,
-			&row.Role, &row.SlackUserID, &row.AvatarURL, &row.CreatedAt)
+			&row.Role, &row.SlackUserID, &row.AvatarURL, &row.IsActive, &row.CreatedAt)
 	if err != nil && isTransientDBConnectionError(err) {
 		time.Sleep(150 * time.Millisecond)
-		err = pool.QueryRow(ctx, q, req.Name, req.Email, hashedPassword, req.Role).
+		err = pool.QueryRow(ctx, q, name, email, hashedPassword, string(role)).
 			Scan(&row.ID, &row.Name, &row.Email, &row.HashedPassword,
-				&row.Role, &row.SlackUserID, &row.AvatarURL, &row.CreatedAt)
+				&row.Role, &row.SlackUserID, &row.AvatarURL, &row.IsActive, &row.CreatedAt)
 	}
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -76,24 +70,21 @@ func CreateUser(_ context.Context, pool *pgxpool.Pool, req RegisterRequest, hash
 
 // GetUserByEmail fetches a user row by email address.
 // Returns ErrUserNotFound if no matching row exists.
-func GetUserByEmail(_ context.Context, pool *pgxpool.Pool, email string) (UserRow, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
-	defer cancel()
-
+func GetUserByEmail(ctx context.Context, pool *pgxpool.Pool, email string) (UserRow, error) {
 	const q = `
-		SELECT id, name, email, hashed_password, role, slack_user_id, avatar_url, created_at
+		SELECT id, name, email, hashed_password, role, slack_user_id, avatar_url, is_active, created_at
 		FROM ops.users
 		WHERE email = $1`
 
 	var row UserRow
 	err := pool.QueryRow(ctx, q, email).
 		Scan(&row.ID, &row.Name, &row.Email, &row.HashedPassword,
-			&row.Role, &row.SlackUserID, &row.AvatarURL, &row.CreatedAt)
+			&row.Role, &row.SlackUserID, &row.AvatarURL, &row.IsActive, &row.CreatedAt)
 	if err != nil && isTransientDBConnectionError(err) {
 		time.Sleep(150 * time.Millisecond)
 		err = pool.QueryRow(ctx, q, email).
 			Scan(&row.ID, &row.Name, &row.Email, &row.HashedPassword,
-				&row.Role, &row.SlackUserID, &row.AvatarURL, &row.CreatedAt)
+				&row.Role, &row.SlackUserID, &row.AvatarURL, &row.IsActive, &row.CreatedAt)
 	}
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -107,24 +98,21 @@ func GetUserByEmail(_ context.Context, pool *pgxpool.Pool, email string) (UserRo
 // GetUserByID fetches a user row by primary key UUID.
 // Returns ErrUserNotFound if no matching row exists.
 // Required by HandleMe which reads UserID from the JWT claims.
-func GetUserByID(_ context.Context, pool *pgxpool.Pool, id uuid.UUID) (UserRow, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
-	defer cancel()
-
+func GetUserByID(ctx context.Context, pool *pgxpool.Pool, id uuid.UUID) (UserRow, error) {
 	const q = `
-		SELECT id, name, email, hashed_password, role, slack_user_id, avatar_url, created_at
+		SELECT id, name, email, hashed_password, role, slack_user_id, avatar_url, is_active, created_at
 		FROM ops.users
 		WHERE id = $1`
 
 	var row UserRow
 	err := pool.QueryRow(ctx, q, id).
 		Scan(&row.ID, &row.Name, &row.Email, &row.HashedPassword,
-			&row.Role, &row.SlackUserID, &row.AvatarURL, &row.CreatedAt)
+			&row.Role, &row.SlackUserID, &row.AvatarURL, &row.IsActive, &row.CreatedAt)
 	if err != nil && isTransientDBConnectionError(err) {
 		time.Sleep(150 * time.Millisecond)
 		err = pool.QueryRow(ctx, q, id).
 			Scan(&row.ID, &row.Name, &row.Email, &row.HashedPassword,
-				&row.Role, &row.SlackUserID, &row.AvatarURL, &row.CreatedAt)
+				&row.Role, &row.SlackUserID, &row.AvatarURL, &row.IsActive, &row.CreatedAt)
 	}
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -137,10 +125,7 @@ func GetUserByID(_ context.Context, pool *pgxpool.Pool, id uuid.UUID) (UserRow, 
 
 // CreateSession inserts a refresh token hash into ops.sessions.
 // The raw token is NEVER passed here — only the bcrypt hash.
-func CreateSession(_ context.Context, pool *pgxpool.Pool, userID uuid.UUID, tokenHash string, expiresAt time.Time) error {
-	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
-	defer cancel()
-
+func CreateSession(ctx context.Context, pool *pgxpool.Pool, userID uuid.UUID, tokenHash string, expiresAt time.Time) error {
 	const q = `
 		INSERT INTO ops.sessions (user_id, refresh_token_hash, expires_at)
 		VALUES ($1, $2, $3)`
@@ -157,12 +142,9 @@ func CreateSession(_ context.Context, pool *pgxpool.Pool, userID uuid.UUID, toke
 }
 
 // ListUsers fetches all active users.
-func ListUsers(_ context.Context, pool *pgxpool.Pool) ([]UserRow, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
-	defer cancel()
-
+func ListUsers(ctx context.Context, pool *pgxpool.Pool) ([]UserRow, error) {
 	const q = `
-		SELECT id, name, email, hashed_password, role, slack_user_id, avatar_url, created_at
+		SELECT id, name, email, hashed_password, role, slack_user_id, avatar_url, is_active, created_at
 		FROM ops.users
 		ORDER BY name ASC`
 
@@ -176,7 +158,7 @@ func ListUsers(_ context.Context, pool *pgxpool.Pool) ([]UserRow, error) {
 	for rows.Next() {
 		var row UserRow
 		if err := rows.Scan(&row.ID, &row.Name, &row.Email, &row.HashedPassword,
-			&row.Role, &row.SlackUserID, &row.AvatarURL, &row.CreatedAt); err != nil {
+			&row.Role, &row.SlackUserID, &row.AvatarURL, &row.IsActive, &row.CreatedAt); err != nil {
 			return nil, fmt.Errorf("auth: scan user row: %w", err)
 		}
 		users = append(users, row)
@@ -189,20 +171,17 @@ func ListUsers(_ context.Context, pool *pgxpool.Pool) ([]UserRow, error) {
 }
 
 // UpdateUser updates specific fields for a user.
-func UpdateUser(_ context.Context, pool *pgxpool.Pool, userID uuid.UUID, name, email string) (UserRow, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
-	defer cancel()
-
+func UpdateUser(ctx context.Context, pool *pgxpool.Pool, userID uuid.UUID, name, email string) (UserRow, error) {
 	const q = `
 		UPDATE ops.users
 		SET name = $2, email = $3
 		WHERE id = $1
-		RETURNING id, name, email, hashed_password, role, slack_user_id, avatar_url, created_at`
+		RETURNING id, name, email, hashed_password, role, slack_user_id, avatar_url, is_active, created_at`
 
 	var row UserRow
 	err := pool.QueryRow(ctx, q, userID, name, email).
 		Scan(&row.ID, &row.Name, &row.Email, &row.HashedPassword,
-			&row.Role, &row.SlackUserID, &row.AvatarURL, &row.CreatedAt)
+			&row.Role, &row.SlackUserID, &row.AvatarURL, &row.IsActive, &row.CreatedAt)
 	if err != nil {
 		return UserRow{}, fmt.Errorf("auth: update user: %w", err)
 	}
@@ -210,22 +189,71 @@ func UpdateUser(_ context.Context, pool *pgxpool.Pool, userID uuid.UUID, name, e
 }
 
 // UpdateUserAvatar updates the avatar URL for a user.
-func UpdateUserAvatar(_ context.Context, pool *pgxpool.Pool, userID uuid.UUID, avatarURL string) (UserRow, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
-	defer cancel()
-
+func UpdateUserAvatar(ctx context.Context, pool *pgxpool.Pool, userID uuid.UUID, avatarURL string) (UserRow, error) {
 	const q = `
 		UPDATE ops.users
 		SET avatar_url = $2
 		WHERE id = $1
-		RETURNING id, name, email, hashed_password, role, slack_user_id, avatar_url, created_at`
+		RETURNING id, name, email, hashed_password, role, slack_user_id, avatar_url, is_active, created_at`
 
 	var row UserRow
 	err := pool.QueryRow(ctx, q, userID, avatarURL).
 		Scan(&row.ID, &row.Name, &row.Email, &row.HashedPassword,
-			&row.Role, &row.SlackUserID, &row.AvatarURL, &row.CreatedAt)
+			&row.Role, &row.SlackUserID, &row.AvatarURL, &row.IsActive, &row.CreatedAt)
 	if err != nil {
 		return UserRow{}, fmt.Errorf("auth: update user avatar: %w", err)
 	}
 	return row, nil
 }
+
+// CreateAuthAuditLog inserts an audit record for an auth action.
+func CreateAuthAuditLog(ctx context.Context, pool *pgxpool.Pool, actorID uuid.UUID, action string, targetID uuid.UUID, metadata map[string]any) error {
+	const q = `
+		INSERT INTO ops.auth_audit_logs (actor_id, action, target_id, metadata)
+		VALUES ($1, $2, $3, $4)`
+
+	metaJSON, _ := json.Marshal(metadata)
+	_, err := pool.Exec(ctx, q, actorID, action, targetID, metaJSON)
+	if err != nil {
+		return fmt.Errorf("auth: create audit log: %w", err)
+	}
+	return nil
+}
+
+// repoUpdateUserRole updates the role of a user.
+func repoUpdateUserRole(ctx context.Context, pool *pgxpool.Pool, userID uuid.UUID, role string) (UserRow, error) {
+	const q = `
+		UPDATE ops.users
+		SET role = $2
+		WHERE id = $1
+		RETURNING id, name, email, hashed_password, role, slack_user_id, avatar_url, is_active, created_at`
+
+	var row UserRow
+	err := pool.QueryRow(ctx, q, userID, role).
+		Scan(&row.ID, &row.Name, &row.Email, &row.HashedPassword,
+			&row.Role, &row.SlackUserID, &row.AvatarURL, &row.IsActive, &row.CreatedAt)
+	if err != nil {
+		return UserRow{}, fmt.Errorf("auth: update user role: %w", err)
+	}
+	return row, nil
+}
+
+// repoUpdateUserStatus toggles the is_active status of a user.
+func repoUpdateUserStatus(ctx context.Context, pool *pgxpool.Pool, userID uuid.UUID, isActive bool) (UserRow, error) {
+	const q = `
+		UPDATE ops.users
+		SET is_active = $2
+		WHERE id = $1
+		RETURNING id, name, email, hashed_password, role, slack_user_id, avatar_url, is_active, created_at`
+
+	var row UserRow
+	err := pool.QueryRow(ctx, q, userID, isActive).
+		Scan(&row.ID, &row.Name, &row.Email, &row.HashedPassword,
+			&row.Role, &row.SlackUserID, &row.AvatarURL, &row.IsActive, &row.CreatedAt)
+	if err != nil {
+		return UserRow{}, fmt.Errorf("auth: update user status: %w", err)
+	}
+	return row, nil
+}
+
+

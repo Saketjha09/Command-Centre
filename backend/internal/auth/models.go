@@ -5,9 +5,9 @@ package auth
 import (
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/saket/command-center/backend/pkg/authutil"
 )
 
 // UserRow is the internal DB row struct. Contains sensitive fields.
@@ -17,10 +17,11 @@ type UserRow struct {
 	ID             uuid.UUID
 	Name           string
 	Email          string
-	HashedPassword string   // bcrypt hash — never leaves the server
+	HashedPassword string // bcrypt hash — never leaves the server
 	Role           string
 	SlackUserID    pgtype.Text // nullable TEXT column
 	AvatarURL      pgtype.Text // New: avatar image path
+	IsActive       bool        // New: account status
 	CreatedAt      time.Time
 }
 
@@ -30,6 +31,7 @@ type UserResponse struct {
 	Name      string    `json:"name"`
 	Email     string    `json:"email"`
 	Role      string    `json:"role"`
+	IsActive  bool      `json:"is_active"`
 	AvatarURL *string   `json:"avatar_url,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -39,7 +41,6 @@ type RegisterRequest struct {
 	Name     string `json:"name"`
 	Email    string `json:"email"`
 	Password string `json:"password"`
-	Role     string `json:"role"`
 }
 
 // LoginRequest is the body for POST /api/v1/auth/login.
@@ -48,9 +49,4 @@ type LoginRequest struct {
 	Password string `json:"password"`
 }
 
-// TokenClaims is the JWT payload embedded in both access tokens.
-type TokenClaims struct {
-	UserID string `json:"user_id"`
-	Role   string `json:"role"`
-	jwt.RegisteredClaims
-}
+// TokenClaims has been moved to pkg/authutil to break import cycles.
