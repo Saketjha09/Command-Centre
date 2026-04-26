@@ -1,36 +1,38 @@
 // Task status union — mirrors the ops.task_status ENUM in the database.
 export type TaskStatus =
-  | 'brief_pending'
+  | 'unassigned'
+  | 'assigned'
   | 'in_progress'
-  | 'review'
-  | 'approved'
-  | 'paid'
+  | 'in_review'
+  | 'done'
 
-// Ordered list of statuses for column rendering.
-export const TASK_STATUSES: TaskStatus[] = [
-  'brief_pending',
+// Kanban column order for rendering.
+export const KANBAN_COLUMNS: TaskStatus[] = [
+  'unassigned',
+  'assigned',
   'in_progress',
-  'review',
-  'approved',
-  'paid',
+  'in_review',
+  'done',
 ]
 
 // Humanized column labels.
 export const STATUS_LABELS: Record<TaskStatus, string> = {
-  brief_pending: 'Brief Pending',
+  unassigned: 'Unassigned',
+  assigned: 'Assigned',
   in_progress: 'In Progress',
-  review: 'Review',
-  approved: 'Approved',
-  paid: 'Paid',
+  in_review: 'In Review',
+  done: 'Done',
 }
+
+export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent'
 
 // TaskSummary is returned in list responses — lightweight.
 export interface TaskSummary {
   id: string
   title: string
-  brand: 'master_app' | 'supernova_ai'
-  status: string
-  priority: 'low' | 'medium' | 'high' | 'urgent'
+  brand: string
+  status: TaskStatus
+  priority: TaskPriority
   assigned_to: string | null
   assigned_to_name?: string | null
   deadline: string | null // ISO 8601
@@ -42,9 +44,9 @@ export interface TaskDetail {
   id: string
   title: string
   description: string
-  brand: 'master_app' | 'supernova_ai'
-  status: string
-  priority: 'low' | 'medium' | 'high' | 'urgent'
+  brand: string
+  status: TaskStatus
+  priority: TaskPriority
   assigned_to: string | null
   created_by: string
   deadline: string | null
@@ -55,6 +57,10 @@ export interface TaskDetail {
 
 // WSMessage is the shape of every message pushed over the WebSocket.
 export interface WSMessage {
-  type: 'task.created' | 'task.assigned' | 'task.status_changed' | 'availability:updated'
+  type: 
+    | 'task.created' 
+    | 'task.assigned' 
+    | 'task.status_changed' 
+    | 'availability:updated'
   payload: unknown
 }

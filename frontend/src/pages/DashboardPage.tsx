@@ -7,6 +7,7 @@ import type { TaskSummary } from '../types/task'
 import type { AvailabilityRecord } from '../types/availability'
 import type { Brand } from '../types/brand'
 import { AdminAvailabilityGrid } from '../components/availability/AdminAvailabilityGrid'
+import { TaskBoard } from '../components/tasks/TaskBoard'
 
 interface Props {
   onNavigate: (view: string) => void
@@ -349,6 +350,12 @@ export function DashboardPage({ onNavigate }: Props) {
       <section className="flex flex-col gap-5 mt-10">
         <h2 className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.2em]">Team Availability (14-Day Grid)</h2>
         <AdminAvailabilityGrid />
+      </section>
+
+      {/* Task Board */}
+      <section className="flex flex-col gap-5 mt-10">
+        <h2 className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.2em]">Task Board</h2>
+        <TaskBoard />
       </section>
     </div>
   )

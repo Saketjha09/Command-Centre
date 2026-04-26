@@ -1,17 +1,24 @@
-// Package tasks contains the tasks domain: models, state machine, repository,
-// service, handlers, and routes. It is the primary operational domain of the
-// Freelance Command Center.
 package tasks
 
 import "time"
 
-// TaskSummary is returned in list responses. Lightweight — omits
-// notification_failed and deadline to keep arrays compact.
+// TaskStatus defines the restricted set of values for a task's lifecycle stage.
+type TaskStatus string
+
+const (
+	TaskStatusUnassigned TaskStatus = "unassigned"
+	TaskStatusAssigned   TaskStatus = "assigned"
+	TaskStatusInProgress TaskStatus = "in_progress"
+	TaskStatusInReview   TaskStatus = "in_review"
+	TaskStatusDone       TaskStatus = "done"
+)
+
+// TaskSummary is returned in list responses.
 type TaskSummary struct {
 	ID             string     `json:"id"`
 	Title          string     `json:"title"`
 	Brand          string     `json:"brand"`
-	Status         string     `json:"status"`
+	Status         TaskStatus `json:"status"`
 	Priority       string     `json:"priority"`
 	AssignedTo     *string    `json:"assigned_to,omitempty"`
 	AssignedToName *string    `json:"assigned_to_name,omitempty"`
@@ -20,13 +27,13 @@ type TaskSummary struct {
 	CreatedAt      time.Time  `json:"created_at"`
 }
 
-// TaskDetail is returned for single-task responses. Full representation.
+// TaskDetail is returned for single-task responses.
 type TaskDetail struct {
 	ID                 string     `json:"id"`
 	Title              string     `json:"title"`
 	Description        string     `json:"description"`
 	Brand              string     `json:"brand"`
-	Status             string     `json:"status"`
+	Status             TaskStatus `json:"status"`
 	Priority           string     `json:"priority"`
 	AssignedTo         *string    `json:"assigned_to,omitempty"`
 	CreatedBy          string     `json:"created_by"`
@@ -59,7 +66,7 @@ type AssignTaskRequest struct {
 
 // TransitionRequest is the body for PATCH /api/v1/tasks/{id}/status.
 type TransitionRequest struct {
-	Status string `json:"status"`
+	Status TaskStatus `json:"status"`
 }
 
 // TaskHistoryEntry represents a single event in a task's lifecycle.
@@ -67,7 +74,7 @@ type TaskHistoryEntry struct {
 	ID        string    `json:"id"`
 	TaskID    string    `json:"task_id"`
 	UserID    string    `json:"user_id"`
-	UserName  string    `json:"user_name,omitempty"` // Joined from users table
+	UserName  string    `json:"user_name,omitempty"`
 	Action    string    `json:"action"`
 	FromValue *string   `json:"from_value,omitempty"`
 	ToValue   *string   `json:"to_value,omitempty"`
@@ -77,9 +84,9 @@ type TaskHistoryEntry struct {
 // SearchResult represents a hit in the global search.
 type SearchResult struct {
 	ID       string `json:"id"`
-	Type     string `json:"type"` // "task" or "user"
+	Type     string `json:"type"`
 	Title    string `json:"title"`
-	Subtitle string `json:"subtitle"` // e.g. "Brief Pending" or "Freelancer"
+	Subtitle string `json:"subtitle"` // e.g. "Unassigned"
 	Avatar   string `json:"avatar,omitempty"`
 }
 
@@ -88,10 +95,9 @@ type SearchResponse struct {
 	Results []SearchResult `json:"results"`
 }
 
-// DashboardMetricsResponse is the body for GET /api/v1/dashboard/metrics.
 type UserMetrics struct {
 	UserName string         `json:"user_name"`
-	Counts   map[string]int `json:"counts"` // content_type -> count
+	Counts   map[string]int `json:"counts"`
 }
 
 type DashboardMetricsResponse struct {

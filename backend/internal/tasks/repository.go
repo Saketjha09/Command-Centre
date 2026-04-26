@@ -46,7 +46,7 @@ const summaryCols = `
 
 // ── write operations ──────────────────────────────────────────────────────────
 
-// CreateTask inserts a new task with status defaulting to 'brief_pending'
+// CreateTask inserts a new task with status defaulting to TaskStatusUnassigned
 // (defined at the schema level) and returns the full TaskDetail.
 // created_by is required by the schema NOT NULL constraint.
 // CreateTask inserts a new task and logs the creation action.
@@ -401,7 +401,7 @@ func getDashboardMetrics(_ context.Context, pool *pgxpool.Pool) (DashboardMetric
 		SELECT u.name, t.content_type::text, COUNT(*)
 		FROM ops.tasks t
 		JOIN ops.users u ON t.assigned_to = u.id
-		WHERE t.status = 'approved' OR t.status = 'paid'
+		WHERE t.status = 'done'
 		GROUP BY u.name, t.content_type
 		ORDER BY u.name, t.content_type`
 
@@ -449,7 +449,8 @@ func scanTaskDetail(row pgx.Row) (TaskDetail, error) {
 		id                 pgtype.UUID
 		title              string
 		description        pgtype.Text
-		brand, status, priority string
+		brand, priority string
+		status         TaskStatus
 		assignedTo         pgtype.UUID
 		createdBy          pgtype.UUID
 		deadline           pgtype.Timestamptz
@@ -501,7 +502,8 @@ func scanTaskDetail(row pgx.Row) (TaskDetail, error) {
 func scanTaskSummary(rows pgx.Rows) (TaskSummary, error) {
 	var (
 		id                   pgtype.UUID
-		title, brand, status, priority string
+		title, brand, priority string
+		status                TaskStatus
 		assignedTo           pgtype.UUID
 		deadline             pgtype.Timestamptz
 		contentType          pgtype.Text
