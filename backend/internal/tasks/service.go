@@ -85,3 +85,11 @@ func GlobalSearch(pool *pgxpool.Pool, query string) ([]SearchResult, error) {
 func GetDashboardMetrics(pool *pgxpool.Pool) (DashboardMetricsResponse, error) {
 	return getDashboardMetrics(context.Background(), pool)
 }
+
+// SuggestEditors returns a list of suggested editors for a task.
+func SuggestEditors(pool *pgxpool.Pool, claims *authutil.TokenClaims, taskID string) ([]EditorSuggestion, error) {
+	if strings.TrimSpace(taskID) == "" {
+		return nil, fmt.Errorf("%w: task id is required", ErrValidation)
+	}
+	return suggestEditors(context.Background(), pool, taskID)
+}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -673,4 +674,136 @@ func MarkSLAAlerted(ctx context.Context, pool *pgxpool.Pool, taskID string) erro
 		return fmt.Errorf("tasks: mark sla alerted: %w", err)
 	}
 	return nil
+}
+
+// suggestEditors returns a scored list of freelancers for a task based on availability and workload.
+func suggestEditors(_ context.Context, pool *pgxpool.Pool, taskID string) ([]EditorSuggestion, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+	defer cancel()
+
+	// 1. Get task details
+	const taskQ = `SELECT brand, deadline FROM ops.tasks WHERE id = $1`
+	var brand string
+	var deadline *time.Time
+	err := pool.QueryRow(ctx, taskQ, taskID).Scan(&brand, &deadline)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrTaskNotFound
+		}
+		return nil, fmt.Errorf("tasks: suggest editors task query: %w", err)
+	}
+
+	// 2. Query freelancers with stats
+	var query string
+	var args []any
+
+	if deadline != nil {
+		query = `
+			SELECT
+				u.id::text,
+				u.name as display_name,
+				u.avatar_url,
+				COALESCE(a.status::text, 'unknown') as availability_status,
+				COALESCE(act.active_task_count, 0) as current_task_count,
+				COALESCE(hx.brand_experience, 0) as brand_experience
+			FROM ops.users u
+			LEFT JOIN ops.availability a
+				ON a.user_id = u.id AND a.date = $1::date
+			LEFT JOIN (
+				SELECT assigned_to, COUNT(*) as active_task_count
+				FROM ops.tasks
+				WHERE status IN ('assigned', 'in_progress', 'in_review')
+				  AND deadline::date = $1::date
+				GROUP BY assigned_to
+			) act ON act.assigned_to = u.id
+			LEFT JOIN (
+				SELECT assigned_to, COUNT(*) as brand_experience
+				FROM ops.tasks
+				WHERE status = 'done' AND brand = $2
+				GROUP BY assigned_to
+			) hx ON hx.assigned_to = u.id
+			WHERE u.role = 'freelancer' AND u.is_active = true`
+		args = []any{*deadline, brand}
+	} else {
+		query = `
+			SELECT
+				u.id::text,
+				u.name as display_name,
+				u.avatar_url,
+				'unknown' as availability_status,
+				COALESCE(act.active_task_count, 0) as current_task_count,
+				COALESCE(hx.brand_experience, 0) as brand_experience
+			FROM ops.users u
+			LEFT JOIN (
+				SELECT assigned_to, COUNT(*) as active_task_count
+				FROM ops.tasks
+				WHERE status IN ('assigned', 'in_progress', 'in_review')
+				GROUP BY assigned_to
+			) act ON act.assigned_to = u.id
+			LEFT JOIN (
+				SELECT assigned_to, COUNT(*) as brand_experience
+				FROM ops.tasks
+				WHERE status = 'done' AND brand = $1
+				GROUP BY assigned_to
+			) hx ON hx.assigned_to = u.id
+			WHERE u.role = 'freelancer' AND u.is_active = true`
+		args = []any{brand}
+	}
+
+	rows, err := pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("tasks: suggest editors query: %w", err)
+	}
+	defer rows.Close()
+
+	var suggestions []EditorSuggestion
+	for rows.Next() {
+		var s EditorSuggestion
+		if err := rows.Scan(&s.UserID, &s.DisplayName, &s.AvatarURL, &s.AvailabilityStatus, &s.CurrentTaskCount, &s.BrandExperience); err != nil {
+			return nil, fmt.Errorf("tasks: scan suggestion: %w", err)
+		}
+
+		// Calculate score
+		reasons := make([]string, 0)
+		score := float64(s.BrandExperience*10) - float64(s.CurrentTaskCount*20)
+		
+		switch s.AvailabilityStatus {
+		case "available":
+			score += 50
+			reasons = append(reasons, "Available on deadline date")
+		case "off", "busy_manual":
+			score -= 100
+			reasons = append(reasons, "Marked unavailable on deadline date")
+		default:
+			reasons = append(reasons, "Availability unknown for deadline date")
+		}
+		
+		if s.CurrentTaskCount == 0 {
+			score += 20
+			reasons = append(reasons, "No other tasks on this date")
+		} else {
+			reasons = append(reasons, 
+				fmt.Sprintf("Has %d active task(s) on this date", s.CurrentTaskCount))
+		}
+		
+		if s.BrandExperience > 0 {
+			reasons = append(reasons, 
+				fmt.Sprintf("Completed %d task(s) for this brand before", s.BrandExperience))
+		}
+		
+		s.Score = score
+		s.Reasons = reasons
+
+		suggestions = append(suggestions, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("tasks: iterate suggestions: %w", err)
+	}
+
+	// Sort suggestions by score descending
+	sort.Slice(suggestions, func(i, j int) bool {
+		return suggestions[i].Score > suggestions[j].Score
+	})
+
+	return suggestions, nil
 }

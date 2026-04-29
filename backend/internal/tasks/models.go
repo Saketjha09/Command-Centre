@@ -114,3 +114,15 @@ type Comment struct {
 	Body       string    `json:"body"`
 	CreatedAt  time.Time `json:"created_at"`
 }
+
+// EditorSuggestion represents a single freelancer suggestion for a task.
+type EditorSuggestion struct {
+	UserID             string   `json:"user_id"`
+	DisplayName        string   `json:"display_name"`
+	AvatarURL          *string  `json:"avatar_url,omitempty"`
+	CurrentTaskCount   int      `json:"current_task_count"`
+	BrandExperience    int      `json:"brand_experience"`
+	AvailabilityStatus string   `json:"availability_status"`
+	Score              float64  `json:"score"`
+	Reasons            []string `json:"reasons"`
+}

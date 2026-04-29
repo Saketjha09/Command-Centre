@@ -436,3 +436,30 @@ func HandleListComments(pool *pgxpool.Pool) http.HandlerFunc {
 		writeJSON(w, http.StatusOK, comments)
 	}
 }
+
+// HandleSuggestEditors handles GET /api/v1/tasks/{id}/suggestions (admin/superadmin only).
+func HandleSuggestEditors(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		claims, ok := auth.ClaimsFromContext(r.Context())
+		if !ok {
+			slog.Error("tasks: HandleSuggestEditors: missing claims in context")
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+
+		suggestions, err := SuggestEditors(pool, claims, id)
+		if err != nil {
+			switch {
+			case errors.Is(err, ErrTaskNotFound):
+				writeError(w, http.StatusNotFound, "task not found")
+			default:
+				slog.Error("tasks: suggestions", "id", id, "error", err)
+				writeError(w, http.StatusInternalServerError, "failed to get suggestions")
+			}
+			return
+		}
+
+		writeJSON(w, http.StatusOK, suggestions)
+	}
+}

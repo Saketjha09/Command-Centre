@@ -69,5 +69,9 @@ func RegisterRoutes(mux *http.ServeMux, pool *pgxpool.Pool, cfg *config.Config, 
 	// List comments on a task — any authenticated user.
 	mux.Handle("GET /api/v1/tasks/{id}/comments",
 		authOnly(http.HandlerFunc(HandleListComments(pool))))
+
+	// Get editor suggestions for a task — admin and superadmin only.
+	mux.Handle("GET /api/v1/tasks/{id}/suggestions",
+		adminOnly(http.HandlerFunc(HandleSuggestEditors(pool, cfg))))
 }
 
