@@ -22,6 +22,7 @@ type TaskSummary struct {
 	Priority       string     `json:"priority"`
 	AssignedTo     *string    `json:"assigned_to,omitempty"`
 	AssignedToName *string    `json:"assigned_to_name,omitempty"`
+	CreatedBy      string     `json:"created_by"`
 	Deadline       *time.Time `json:"deadline,omitempty"`
 	ContentType    string     `json:"content_type"`
 	CreatedAt      time.Time  `json:"created_at"`

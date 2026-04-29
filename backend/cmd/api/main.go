@@ -18,6 +18,7 @@ import (
 	"github.com/saket/command-center/backend/internal/auth"
 	"github.com/saket/command-center/backend/internal/availability"
 	"github.com/saket/command-center/backend/internal/brands"
+	"github.com/saket/command-center/backend/internal/cron"
 	"github.com/saket/command-center/backend/internal/notifications"
 	"github.com/saket/command-center/backend/internal/db"
 	"github.com/saket/command-center/backend/internal/tasks"
@@ -112,6 +113,10 @@ func main() {
 	hub := ws.NewHub()
 	go hub.Run()
 
+	// ── Background Workers ──────────────────────────────────────────────────────
+	appCtx, appCancel := context.WithCancel(context.Background())
+	go cron.StartSLAWatcher(appCtx, pool, hub)
+
 	// Auth domain: register, login, logout, me.
 	auth.RegisterRoutes(mux, pool, cfg)
 
@@ -191,6 +196,8 @@ func main() {
 	case err := <-serverErr:
 		log.Printf("Server error: %v — initiating shutdown", err)
 	}
+
+	appCancel()
 
 	// Unified shutdown path — always reached regardless of which case fired.
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)

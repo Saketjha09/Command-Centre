@@ -1,0 +1,6 @@
+BEGIN;
+
+ALTER TABLE ops.tasks 
+ADD COLUMN IF NOT EXISTS sla_alerted_at TIMESTAMPTZ;
+
+COMMIT;

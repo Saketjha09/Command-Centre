@@ -46,7 +46,7 @@ const detailCols = ` id, title, description, brand, status, priority, assigned_t
 
 // summaryCols is the explicit column list for TaskSummary list scans.
 const summaryCols = `
-	t.id, t.title, t.brand, t.status, t.priority, t.assigned_to, t.deadline, t.content_type, t.created_at, u.name as assigned_to_name`
+	t.id, t.title, t.brand, t.status, t.priority, t.assigned_to, t.created_by, t.deadline, t.content_type, t.created_at, u.name as assigned_to_name`
 
 // ── write operations ──────────────────────────────────────────────────────────
 
@@ -524,22 +524,24 @@ func scanTaskSummary(rows pgx.Rows) (TaskSummary, error) {
 		title, brand, priority string
 		status                TaskStatus
 		assignedTo           pgtype.UUID
+		createdBy            pgtype.UUID
 		deadline             pgtype.Timestamptz
 		contentType          pgtype.Text
 		createdAt            time.Time
 		assignedToName       pgtype.Text
 	)
-	if err := rows.Scan(&id, &title, &brand, &status, &priority, &assignedTo, &deadline, &contentType, &createdAt, &assignedToName); err != nil {
+	if err := rows.Scan(&id, &title, &brand, &status, &priority, &assignedTo, &createdBy, &deadline, &contentType, &createdAt, &assignedToName); err != nil {
 		return TaskSummary{}, err
 	}
 	s := TaskSummary{
-		ID:        pgUUIDString(id),
-		Title:     title,
-		Brand:     brand,
-		Status:    status,
-		Priority:  priority,
+		ID:          pgUUIDString(id),
+		Title:       title,
+		Brand:       brand,
+		Status:      status,
+		Priority:    priority,
+		CreatedBy:   pgUUIDString(createdBy),
 		ContentType: contentType.String,
-		CreatedAt: createdAt,
+		CreatedAt:   createdAt,
 	}
 	if assignedTo.Valid {
 		str := pgUUIDString(assignedTo)
@@ -623,4 +625,52 @@ func ListComments(ctx context.Context, pool *pgxpool.Pool, taskID string, limit 
 		return nil, fmt.Errorf("tasks: list comments rows: %w", err)
 	}
 	return comments, nil
+}
+
+// FetchSLAAtRiskTasks returns tasks that are within 24 hours of their deadline
+// and have not yet had an SLA alert sent.
+func FetchSLAAtRiskTasks(ctx context.Context, pool *pgxpool.Pool) ([]TaskSummary, error) {
+	q := `
+		SELECT` + summaryCols + `
+		FROM ops.tasks t
+		LEFT JOIN ops.users u ON t.assigned_to = u.id
+		WHERE t.deadline IS NOT NULL
+		  AND t.deadline <= now() + INTERVAL '24 hours'
+		  AND t.deadline > now()
+		  AND t.status NOT IN ('in_review', 'done')
+		  AND t.sla_alerted_at IS NULL`
+
+	rows, err := pool.Query(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("tasks: fetch sla at-risk query: %w", err)
+	}
+	defer rows.Close()
+
+	result := make([]TaskSummary, 0)
+	for rows.Next() {
+		s, err := scanTaskSummary(rows)
+		if err != nil {
+			return nil, fmt.Errorf("tasks: scan sla at-risk summary: %w", err)
+		}
+		result = append(result, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("tasks: fetch sla at-risk rows: %w", err)
+	}
+	
+	return result, nil
+}
+
+// MarkSLAAlerted stamps the sla_alerted_at column to prevent duplicate alerts.
+func MarkSLAAlerted(ctx context.Context, pool *pgxpool.Pool, taskID string) error {
+	const q = `
+		UPDATE ops.tasks 
+		SET sla_alerted_at = now()
+		WHERE id = $1`
+
+	_, err := pool.Exec(ctx, q, taskID)
+	if err != nil {
+		return fmt.Errorf("tasks: mark sla alerted: %w", err)
+	}
+	return nil
 }
