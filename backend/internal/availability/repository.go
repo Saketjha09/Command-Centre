@@ -143,48 +143,6 @@ func getAllAvailabilityForDate(pool *pgxpool.Pool, date, filterUserID string) ([
 	return scanRecords(rows)
 }
 
-// getBookedDates returns a map of dates (YYYY-MM-DD) on which the user
-// has at least one task with status 'in_progress' or 'in_review'.
-func getBookedDates(pool *pgxpool.Pool, userID string, from, to time.Time) (map[string]bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	query := `
-		SELECT DISTINCT deadline::date::text
-		FROM ops.tasks
-		WHERE assigned_to = $1 
-		  AND deadline >= $2 AND deadline <= $3
-		  AND status IN ('in_progress', 'in_review')`
-
-	rows, err := pool.Query(ctx, query, userID, from, to)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	booked := make(map[string]bool)
-	for rows.Next() {
-		var date string
-		if err := rows.Scan(&date); err != nil {
-			return nil, err
-		}
-		booked[date] = true
-	}
-	return booked, rows.Err()
-}
-
-// deleteSlot removes a single availability slot.
-func deleteSlot(pool *pgxpool.Pool, userID, date, slot string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	query := `
-		DELETE FROM ops.availability
-		WHERE user_id = $1 AND date = $2::date AND slot = $3::ops.availability_slot`
-
-	_, err := pool.Exec(ctx, query, userID, date, slot)
-	return err
-}
 
 type AdminGridRow struct {
 	UserID      string  `json:"user_id"`
