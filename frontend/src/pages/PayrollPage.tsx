@@ -8,7 +8,7 @@ import { HistoryTab } from '../components/payroll/HistoryTab';
 
 type Tab = 'rates' | 'run' | 'history';
 
-export default function PayrollPage() {
+export function PayrollPage() {
   const { role } = useAuth();
   
   // Rules of Hooks: Call all hooks before any conditional returns

@@ -2,7 +2,10 @@ import type { TaskSummary, TaskDetail } from '../types/task'
 import type { Brand } from '../types/brand'
 import type { User } from '../types/auth'
 
-const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
+const BASE_URL = import.meta.env.VITE_API_URL;
+if (!BASE_URL) {
+  throw new Error('VITE_API_URL is not set');
+}
 
 // All requests include credentials so the JWT HttpOnly cookie is sent.
 const defaultOptions: RequestInit = { credentials: 'include' }
