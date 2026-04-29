@@ -20,6 +20,7 @@ import (
 	"github.com/saket/command-center/backend/internal/brands"
 	"github.com/saket/command-center/backend/internal/cron"
 	"github.com/saket/command-center/backend/internal/notifications"
+	"github.com/saket/command-center/backend/internal/payroll"
 	"github.com/saket/command-center/backend/internal/db"
 	"github.com/saket/command-center/backend/internal/tasks"
 	"github.com/saket/command-center/backend/internal/ws"
@@ -143,6 +144,9 @@ func main() {
 
 	// Notifications domain: Slack pings, etc.
 	notifications.RegisterRoutes(mux, pool, cfg)
+
+	// Payroll domain: rates and monthly run management.
+	payroll.RegisterRoutes(mux, pool, cfg)
 
 	// WebSocket endpoint — auth is validated inside the handler (pre-upgrade).
 	// Cannot use middleware chain here: HTTP error codes are impossible post-upgrade.

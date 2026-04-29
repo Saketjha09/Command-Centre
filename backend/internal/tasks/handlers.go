@@ -16,7 +16,6 @@ import (
 	"github.com/saket/command-center/backend/internal/auth"
 	notifs "github.com/saket/command-center/backend/internal/notifications"
 	"github.com/saket/command-center/backend/pkg/config"
-	"github.com/saket/command-center/backend/pkg/middleware"
 )
 
 // ── JSON helpers ──────────────────────────────────────────────────────────────
@@ -243,7 +242,7 @@ func HandleTransitionStatus(pool *pgxpool.Pool, cfg *config.Config, hub WSBroadc
 			return
 		}
 
-		task, err := TransitionStatus(r.Context(), pool, claims, id, req.Status)
+		task, err := TransitionStatus(r.Context(), pool, claims, id, string(req.Status))
 		if err != nil {
 			switch {
 			case errors.Is(err, ErrTaskNotFound):

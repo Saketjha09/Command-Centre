@@ -18,7 +18,6 @@ import (
 	"github.com/saket/command-center/backend/internal/auth"
 	"github.com/saket/command-center/backend/internal/pkg/sheets"
 	"github.com/saket/command-center/backend/pkg/config"
-	"github.com/saket/command-center/backend/pkg/middleware"
 )
 
 // HandleListNotifications returns the most recent notifications for the authenticated user.
@@ -30,7 +29,14 @@ func HandleListNotifications(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		notifications, err := ListNotifications(r.Context(), pool, claims.UserID, 50)
+		recipientID, err := uuid.Parse(claims.UserID)
+		if err != nil {
+			slog.Error("notifications: invalid user ID in claims", "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
+		notifications, err := ListNotifications(r.Context(), pool, recipientID, 50)
 		if err != nil {
 			slog.Error("notifications: list failed", "error", err, "user_id", claims.UserID)
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -56,7 +62,14 @@ func HandleGetUnreadCount(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		count, err := GetUnreadCount(r.Context(), pool, claims.UserID)
+		recipientID, err := uuid.Parse(claims.UserID)
+		if err != nil {
+			slog.Error("notifications: invalid user ID in claims", "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
+		count, err := GetUnreadCount(r.Context(), pool, recipientID)
 		if err != nil {
 			slog.Error("notifications: unread count failed", "error", err, "user_id", claims.UserID)
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -84,7 +97,14 @@ func HandleMarkAsRead(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		err = MarkAsRead(r.Context(), pool, notifID, claims.UserID)
+		recipientID, err := uuid.Parse(claims.UserID)
+		if err != nil {
+			slog.Error("notifications: invalid user ID in claims", "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
+		err = MarkAsRead(r.Context(), pool, notifID, recipientID)
 		if err != nil {
 			// Security: Return 404 to avoid leaking existence of notifications for other users
 			http.Error(w, "notification not found", http.StatusNotFound)
@@ -104,7 +124,14 @@ func HandleMarkAllAsRead(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		err := MarkAllAsRead(r.Context(), pool, claims.UserID)
+		recipientID, err := uuid.Parse(claims.UserID)
+		if err != nil {
+			slog.Error("notifications: invalid user ID in claims", "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
+		err = MarkAllAsRead(r.Context(), pool, recipientID)
 		if err != nil {
 			slog.Error("notifications: mark all read failed", "error", err, "user_id", claims.UserID)
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -159,7 +186,7 @@ func VerifySlackSignature(cfg *config.Config, r *http.Request) error {
 func HandleSlackInteractive(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := VerifySlackSignature(cfg, r); err != nil {
-			log.Printf("notifications: invalid slack signature: %v", err)
+			slog.Error("notifications: invalid slack signature", "error", err)
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
@@ -188,7 +215,7 @@ func HandleSlackInteractive(pool *pgxpool.Pool, cfg *config.Config) http.Handler
 		for _, action := range payload.Actions {
 			if action.ActionID == "verify_tally" {
 				taskID := action.Value
-				log.Printf("notifications: Slack user %s verified tally for task %s", payload.User.ID, taskID)
+				slog.Info("notifications: Slack user verified tally for task", "user_id", payload.User.ID, "task_id", taskID)
 				
 				// 1. Fetch task details for the ledger
 				var (
@@ -202,7 +229,7 @@ func HandleSlackInteractive(pool *pgxpool.Pool, cfg *config.Config) http.Handler
 					taskID).Scan(&title, &brand, &payoutAmount, &userID)
 				
 				if err != nil {
-					log.Printf("notifications: failed to fetch task %s for sync: %v", taskID, err)
+					slog.Error("notifications: failed to fetch task for sync", "task_id", taskID, "error", err)
 					http.Error(w, "internal error", http.StatusInternalServerError)
 					return
 				}
@@ -212,7 +239,7 @@ func HandleSlackInteractive(pool *pgxpool.Pool, cfg *config.Config) http.Handler
 					"UPDATE ops.tasks SET status = 'approved', updated_at = now() WHERE id = $1", 
 					taskID)
 				if err != nil {
-					log.Printf("notifications: failed to update task %s status: %v", taskID, err)
+					slog.Error("notifications: failed to update task status", "task_id", taskID, "error", err)
 				}
 
 				// 3. Dispatch Async Sync to Google Sheets
@@ -250,7 +277,7 @@ func HandleSlackPing(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 		err := pool.QueryRow(r.Context(), "SELECT slack_user_id FROM ops.users WHERE id = $1", id).Scan(&slackID)
 		if err != nil {
 			http.Error(w, "user not found", http.StatusNotFound)
-			log.Printf("notifications: user %s not found: %v", id, err)
+			slog.Error("notifications: user not found", "user_id", id, "error", err)
 			return
 		}
 
@@ -262,7 +289,7 @@ func HandleSlackPing(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
 		// Send ping
 		err = SendDM(cfg, slackID, "Your attention is requested in the Command Center.")
 		if err != nil {
-			log.Printf("notifications: slack ping failed for %s: %v", slackID, err)
+			slog.Error("notifications: slack ping failed", "slack_id", slackID, "error", err)
 			http.Error(w, "failed to send Slack message", http.StatusInternalServerError)
 			return
 		}

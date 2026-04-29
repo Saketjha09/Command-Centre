@@ -181,7 +181,7 @@ func transitionStatus(ctx context.Context, pool *pgxpool.Pool, taskID, newStatus
 		}
 	}
 
-	if err := ValidateTransition(current.Status, newStatus); err != nil {
+	if err := ValidateTransition(string(current.Status), newStatus); err != nil {
 		return TaskDetail{}, err
 	}
 
@@ -197,7 +197,8 @@ func transitionStatus(ctx context.Context, pool *pgxpool.Pool, taskID, newStatus
 	}
 
 	// Log transition
-	if err := logTaskAction(ctx, tx, taskID, claims.UserID, "status_change", &current.Status, &newStatus); err != nil {
+	oldStatusStr := string(current.Status)
+	if err := logTaskAction(ctx, tx, taskID, claims.UserID, "status_change", &oldStatusStr, &newStatus); err != nil {
 		return TaskDetail{}, fmt.Errorf("tasks: log transition history: %w", err)
 	}
 
