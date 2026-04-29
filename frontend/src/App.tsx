@@ -38,7 +38,7 @@ const DEFAULT_VIEW: Record<string, View> = {
 // Role-based accessible views
 const ACCESSIBLE_VIEWS: Record<string, View[]> = {
   superadmin: ['dashboard', 'board', 'availability', 'people', 'payroll', 'profile', 'users'],
-  admin: ['dashboard', 'board', 'availability', 'people', 'profile'],
+  admin: ['dashboard', 'board', 'availability', 'people', 'payroll', 'profile'],
   freelancer: ['mytasks', 'availability', 'profile'],
 }
 

@@ -107,6 +107,7 @@ export function Sidebar({ currentView, onNavigate, collapsed, onToggle, onAddMem
       { id: 'board', label: 'Projects', icon: 'Tasks' },
       { id: 'availability', label: 'Availability', icon: 'Availability' },
       { id: 'people', label: 'Freelancers', icon: 'People' },
+      { id: 'payroll', label: 'Payroll', icon: 'Payroll' },
       { id: 'profile', label: 'Profile', icon: 'Profile' },
     ],
     freelancer: [
