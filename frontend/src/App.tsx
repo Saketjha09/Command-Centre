@@ -13,8 +13,9 @@ import { LoadingSpinner } from './components/LoadingSpinner'
 import { Sidebar } from './components/shell/Sidebar'
 import { TopBar } from './components/shell/TopBar'
 import { ProfilePage } from './pages/ProfilePage'
+import UserManagementPage from './pages/UserManagementPage'
 
-type View = 'dashboard' | 'board' | 'availability' | 'people' | 'payroll' | 'mytasks' | 'profile'
+type View = 'dashboard' | 'board' | 'availability' | 'people' | 'payroll' | 'mytasks' | 'profile' | 'users'
 
 const VIEW_TITLES: Record<View, string> = {
   dashboard: 'Dashboard',
@@ -24,6 +25,7 @@ const VIEW_TITLES: Record<View, string> = {
   payroll: 'Payroll',
   mytasks: 'My Work',
   profile: 'Settings',
+  users: 'User Management',
 }
 
 // Role-based default views
@@ -35,7 +37,7 @@ const DEFAULT_VIEW: Record<string, View> = {
 
 // Role-based accessible views
 const ACCESSIBLE_VIEWS: Record<string, View[]> = {
-  superadmin: ['dashboard', 'board', 'availability', 'people', 'payroll', 'profile'],
+  superadmin: ['dashboard', 'board', 'availability', 'people', 'payroll', 'profile', 'users'],
   admin: ['dashboard', 'board', 'availability', 'people', 'profile'],
   freelancer: ['mytasks', 'availability', 'profile'],
 }
@@ -53,7 +55,9 @@ function AuthenticatedApp() {
   const { user } = useAuthContext()
   const [searchParams, setSearchParams] = useSearchParams()
   
-  const userRole = (user?.role || 'freelancer') as 'superadmin' | 'admin' | 'freelancer'
+  const rawRole = (user?.role || 'freelancer').toLowerCase()
+  const userRole = (['superadmin', 'admin', 'freelancer'].includes(rawRole) ? rawRole : 'freelancer') as keyof typeof ACCESSIBLE_VIEWS
+  
   const accessibleViews = ACCESSIBLE_VIEWS[userRole] || ACCESSIBLE_VIEWS.freelancer
   const defaultView = DEFAULT_VIEW[userRole] || DEFAULT_VIEW.freelancer
 
@@ -81,11 +85,16 @@ function AuthenticatedApp() {
 
   // 2. Sync validated view to URL and localStorage
   useEffect(() => {
-    if (searchParams.get('v') !== view) {
-      setSearchParams({ v: view }, { replace: true })
+    const currentParamV = searchParams.get('v')
+    if (currentParamV !== view) {
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev)
+        next.set('v', view)
+        return next
+      }, { replace: true })
     }
     localStorage.setItem('currentView', view)
-  }, [view, searchParams, setSearchParams])
+  }, [view, setSearchParams])
 
   useEffect(() => {
     localStorage.setItem('sidebarCollapsed', String(sidebarCollapsed))
@@ -144,6 +153,9 @@ function AuthenticatedApp() {
           onAddMember={(userRole === 'superadmin' || userRole === 'admin') ? () => setIsAddMemberOpen(true) : undefined}
           onAddBrand={(userRole === 'superadmin' || userRole === 'admin') ? () => setIsAddBrandOpen(true) : undefined}
         />
+        
+
+
         <main className="flex-1 overflow-hidden relative flex flex-col min-h-0 bg-white border-l border-gray-100">
           {view === 'dashboard' && <DashboardPage onNavigate={handleNavigate} />}
           {view === 'board' && <KanbanBoard />}
@@ -152,6 +164,7 @@ function AuthenticatedApp() {
           {view === 'payroll' && <PayrollPage />}
           {view === 'mytasks' && <MyTasksPage onNavigate={handleNavigate} />}
           {view === 'profile' && <ProfilePage />}
+          {view === 'users' && <UserManagementPage />}
         </main>
       </div>
 
@@ -199,7 +212,7 @@ function Router() {
     )
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || !localStorage.getItem('access_token')) {
     if (authView === 'register') {
       return <RegisterPage onGoToLogin={() => setAuthView('login')} />
     }

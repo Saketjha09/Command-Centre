@@ -34,6 +34,11 @@ const Icons = {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
     </svg>
   ),
+  Users: () => (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+    </svg>
+  ),
   Payroll: () => (
     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 8c-1.657 0-3 1.343-3 3s1.343 3 3 3 3-1.343 3-3-1.343-3-3-3zM12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zM12 18v-1m0-8V7" />
@@ -95,6 +100,7 @@ export function Sidebar({ currentView, onNavigate, collapsed, onToggle, onAddMem
       { id: 'people', label: 'Freelancers', icon: 'People' },
       { id: 'payroll', label: 'Payroll', icon: 'Payroll' },
       { id: 'profile', label: 'Profile', icon: 'Profile' },
+      { id: 'users', label: 'System Users', icon: 'Users' },
     ],
     admin: [
       { id: 'dashboard', label: 'Dashboard', icon: 'Dashboard' },
@@ -110,7 +116,9 @@ export function Sidebar({ currentView, onNavigate, collapsed, onToggle, onAddMem
     ]
   }
 
-  const items = ROLE_NAV[role] || ROLE_NAV.freelancer
+  const rawRole = (role || 'freelancer').toLowerCase()
+  const userRole = (['superadmin', 'admin', 'freelancer'].includes(rawRole) ? rawRole : 'freelancer')
+  const items = ROLE_NAV[userRole] || ROLE_NAV.freelancer
 
   return (
     <aside className={`flex flex-col border-r border-gray-200 bg-gray-50/50 transition-all duration-300 overflow-hidden ${collapsed ? 'w-18' : 'w-[260px]'}`}>
