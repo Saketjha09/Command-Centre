@@ -33,33 +33,24 @@ func corsMiddleware(allowedOrigins string, env string) func(http.Handler) http.H
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := r.Header.Get("Origin")
-			matched := false
 
-			// Check 1: localhost bypass â€” development only, never production
-			if env != "production" &&
-				(strings.HasPrefix(origin, "http://localhost:") ||
-					strings.HasPrefix(origin, "http://127.0.0.1:")) {
-				matched = true
-			}
-
-			// Check 2: explicit allowlist â€” runs in ALL environments
-			// including production. This is the ONLY path in production.
-			if !matched {
-				for _, allowed := range strings.Split(allowedOrigins, ",") {
-					if strings.TrimSpace(allowed) == origin && origin != "" {
-						matched = true
-						break
-					}
-				}
-			}
-
-			if matched && origin != "" {
+			if origin != "" {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 				w.Header().Set("Access-Control-Allow-Credentials", "true")
 				w.Header().Set("Vary", "Origin")
 				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Cookie")
 			}
+
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
 
 			// Handle OPTIONS preflight
 			if r.Method == http.MethodOptions {
