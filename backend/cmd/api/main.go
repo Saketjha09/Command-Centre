@@ -1,4 +1,4 @@
-﻿// Command api is the entrypoint for the Freelance Command Center API server.
+// Command api is the entrypoint for the Freelance Command Center API server.
 // It wires configuration, the database pool, the HTTP router, and OS-signal
 // handling for graceful shutdown into a single clean main() function.
 package main
@@ -75,7 +75,7 @@ func slashMiddleware(next http.Handler) http.Handler {
 
 func main() {
 	// -------------------------------------------------------------------------
-	// 1. Load & validate configuration â€” fatal on any missing env var.
+	// 1. Load & validate configuration — fatal on any missing env var.
 	// -------------------------------------------------------------------------
 	cfg, err := config.Load()
 	if err != nil {
@@ -83,7 +83,7 @@ func main() {
 	}
 
 	// -------------------------------------------------------------------------
-	// 2. Establish the database pool â€” fatal if Postgres is unreachable.
+	// 2. Establish the database pool — fatal if Postgres is unreachable.
 	// -------------------------------------------------------------------------
 	pool, err := db.Connect(cfg)
 	if err != nil {
@@ -96,23 +96,23 @@ func main() {
 	// -------------------------------------------------------------------------
 	mux := http.NewServeMux()
 
-	// GET /api/v1/health â€” shallow liveness + DB reachability probe.
+	// GET /api/v1/health — shallow liveness + DB reachability probe.
 	mux.HandleFunc("GET /api/v1/health", healthHandler(pool))
 
-	// â”€â”€ WebSocket hub â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+	// ── WebSocket hub ──────────────────────────────────────────────────────────
 	// The hub must be running before any route is registered so that the first
 	// WS connection has somewhere to register.
 	hub := ws.NewHub()
 	go hub.Run()
 
-	// â”€â”€ Background Workers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+	// ── Background Workers ──────────────────────────────────────────────────────
 	appCtx, appCancel := context.WithCancel(context.Background())
 	go cron.StartSLAWatcher(appCtx, pool, hub)
 
 	// Auth domain: register, login, logout, me.
 	auth.RegisterRoutes(mux, pool, cfg)
 
-	// Rate limit auth mutation endpoints â€” 10 req/min per IP
+	// Rate limit auth mutation endpoints — 10 req/min per IP
 	loginRateLimit := middleware.RateLimit(10, time.Minute)
 	mux.Handle("POST /api/v1/auth/login",
 		loginRateLimit(http.HandlerFunc(auth.HandleLogin(pool, cfg))))
@@ -135,7 +135,7 @@ func main() {
 	// Payroll domain: rates and monthly run management.
 	payroll.RegisterRoutes(mux, pool, cfg)
 
-	// WebSocket endpoint â€” auth is validated inside the handler (pre-upgrade).
+	// WebSocket endpoint — auth is validated inside the handler (pre-upgrade).
 	// Cannot use middleware chain here: HTTP error codes are impossible post-upgrade.
 	mux.HandleFunc("GET /api/v1/ws", ws.HandleWebSocket(hub, cfg))
 
@@ -183,14 +183,14 @@ func main() {
 
 	select {
 	case sig := <-quit:
-		log.Printf("Received signal %s â€” shutting down gracefully...", sig)
+		log.Printf("Received signal %s — shutting down gracefully...", sig)
 	case err := <-serverErr:
-		log.Printf("Server error: %v â€” initiating shutdown", err)
+		log.Printf("Server error: %v — initiating shutdown", err)
 	}
 
 	appCancel()
 
-	// Unified shutdown path â€” always reached regardless of which case fired.
+	// Unified shutdown path — always reached regardless of which case fired.
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 
@@ -230,5 +230,6 @@ func healthHandler(pool *pgxpool.Pool) http.HandlerFunc {
 		_ = json.NewEncoder(w).Encode(response{Status: "ok", DB: dbStatus})
 	}
 }
+
 
 
