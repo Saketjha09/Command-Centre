@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/saket/command-center/backend/pkg/authutil"
 )
 
 // Package-level sentinel errors — use errors.Is() to check these in callers.
@@ -255,5 +257,3 @@ func repoUpdateUserStatus(ctx context.Context, pool *pgxpool.Pool, userID uuid.U
 	}
 	return row, nil
 }
-
-

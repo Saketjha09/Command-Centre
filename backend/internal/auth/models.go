@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/saket/command-center/backend/pkg/authutil"
 )
 
 // UserRow is the internal DB row struct. Contains sensitive fields.

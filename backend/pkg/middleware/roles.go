@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+
+	"github.com/saket/command-center/backend/pkg/authutil"
 )
 
 // RequireRole returns a middleware that grants access only if the authenticated
@@ -16,12 +18,12 @@ import (
 //
 // Usage examples:
 //
-//	RequireRole("superadmin")
-//	RequireRole("superadmin", "admin")
-func RequireRole(roles ...string) func(http.Handler) http.Handler {
+//	RequireRole(authutil.RoleAdmin)
+//	RequireRole(authutil.RoleSuperAdmin, authutil.RoleAdmin)
+func RequireRole(roles ...authutil.Role) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			claims, ok := ClaimsFromContext(r.Context())
+			claims, ok := authutil.ClaimsFromContext(r.Context())
 			if !ok {
 				// No claims in context means Authenticate was not in the chain.
 				// This is a misconfigured middleware stack — a developer mistake,
