@@ -24,7 +24,7 @@ export function RichTextEditor({ content, onChange, placeholder }: RichTextEdito
     content,
     editorProps: {
       attributes: {
-        class: 'prose prose-zinc prose-invert prose-sm max-w-none focus:outline-none min-h-[150px] p-6',
+        class: 'prose prose-zinc prose-sm max-w-none focus:outline-none min-h-[150px] p-6 text-gray-900',
       },
     },
     onUpdate: ({ editor }) => {
@@ -53,9 +53,9 @@ export function RichTextEditor({ content, onChange, placeholder }: RichTextEdito
   }
 
   return (
-    <div className="w-full bg-[#18181b]/50 border border-[#27272a] rounded-3xl overflow-hidden focus-within:border-indigo-500/30 transition-all">
+    <div className="relative w-full bg-white border border-gray-200 rounded-3xl overflow-hidden focus-within:border-indigo-600 focus-within:ring-4 focus-within:ring-indigo-50 transition-all">
       {/* Toolbar */}
-      <div className="flex items-center gap-1 p-2 border-b border-[#27272a] bg-[#09090b]">
+      <div className="flex items-center gap-1 p-2 border-b border-gray-100 bg-gray-50/50">
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleBold().run()}
           active={editor.isActive('bold')}
@@ -83,13 +83,15 @@ export function RichTextEditor({ content, onChange, placeholder }: RichTextEdito
       </div>
 
       {/* Editor Area */}
-      <EditorContent editor={editor} />
-      
-      {placeholder && !content && (
-        <div className="absolute top-[88px] left-6 text-[#3f3f46] pointer-events-none text-sm italic">
-          {placeholder}
-        </div>
-      )}
+      <div className="relative">
+        <EditorContent editor={editor} />
+        
+        {placeholder && !content && (
+          <div className="absolute top-6 left-6 text-gray-300 pointer-events-none text-sm font-medium italic">
+            {placeholder}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -100,10 +102,10 @@ function ToolbarButton({ onClick, active, label, title }: { onClick: () => void,
       type="button"
       onClick={onClick}
       title={title}
-      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+      className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
         active 
-          ? 'bg-indigo-500 text-white' 
-          : 'text-[#71717a] hover:bg-[#18181b] hover:text-[#fafafa]'
+          ? 'bg-indigo-600 text-white' 
+          : 'text-gray-400 hover:bg-gray-100 hover:text-gray-900'
       }`}
     >
       {label}

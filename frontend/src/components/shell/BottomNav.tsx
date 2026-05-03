@@ -7,7 +7,8 @@ interface BottomNavProps {
 
 export function BottomNav({ currentView, onNavigate }: BottomNavProps) {
   const { user } = useAuthContext()
-  const role = user?.role || 'freelancer'
+  const rawRole = (user?.role || 'freelancer').toLowerCase()
+  const role = ['superadmin', 'admin', 'freelancer'].includes(rawRole) ? rawRole : 'freelancer'
 
   const navItems = [
     { 

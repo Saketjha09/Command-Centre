@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
-import { createTask, fetchTaskById, fetchUsers, assignTask, fetchTaskHistory, fetchBrands } from '../../services/api'
+import { createTask, fetchTaskById, fetchUsers, assignTask, fetchTaskHistory, fetchBrands, transitionTaskStatus } from '../../services/api'
 import { LoadingSpinner } from '../LoadingSpinner'
 import ReactMarkdown from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
 import { RichTextEditor } from '../RichTextEditor'
+import { useAuthContext } from '../../context/AuthContext'
 import type { TaskDetail } from '../../types/task'
 import type { Brand } from '../../types/brand'
 
@@ -34,6 +35,7 @@ const PRIORITIES = [
 ]
 
 export function TaskDrawer({ isOpen, onClose, mode, taskId, initialStatus, onCreate }: Props) {
+  const { user } = useAuthContext()
   const [activeTab, setActiveTab] = useState<'details' | 'history'>('details')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -137,6 +139,21 @@ export function TaskDrawer({ isOpen, onClose, mode, taskId, initialStatus, onCre
     }
   }
 
+  async function handleStatusTransition(newStatus: string) {
+    if (!taskId) return
+    setLoading(true)
+    setError(null)
+    try {
+      const updated = await transitionTaskStatus(taskId, newStatus)
+      setTask(updated)
+      if (activeTab === 'history') loadHistory(taskId)
+    } catch (err: any) {
+      setError(err.message ?? 'Transition failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   async function handleSubmit() {
     if (!title.trim()) { setError('Title is required'); return }
     if (!brand) { setError('Brand is required'); return }
@@ -148,7 +165,7 @@ export function TaskDrawer({ isOpen, onClose, mode, taskId, initialStatus, onCre
         description: description.trim(),
         brand,
         priority,
-        deadline: deadline || undefined,
+        deadline: deadline ? new Date(deadline).toISOString() : undefined,
         status: initialStatus,
         payoutAmount: parseFloat(payoutAmount) || 0,
         content_type: contentType,
@@ -412,31 +429,85 @@ export function TaskDrawer({ isOpen, onClose, mode, taskId, initialStatus, onCre
         </div>
 
         {/* Footer Actions */}
-        <div className="p-6 border-t border-gray-100 flex items-center justify-end gap-3 bg-white">
-           <button onClick={onClose} className="px-5 py-2 text-xs font-bold text-gray-500 hover:text-gray-900 transition-colors">Discard</button>
-           
-           {mode === 'create' && creationStep === 0 ? (
-             <button 
-               onClick={() => setCreationStep(1)}
-               disabled={!title.trim() || !brand}
-               className="px-6 py-2.5 rounded-lg bg-indigo-600 text-white text-[12px] font-bold transition-all active:scale-95 disabled:opacity-50 shadow-lg shadow-indigo-100"
-             >
-               Next: Briefing
-             </button>
-           ) : (
-             <div className="flex gap-3">
-               {mode === 'create' && (
-                 <button onClick={() => setCreationStep(0)} className="px-5 py-2 text-xs font-bold text-gray-500 hover:text-gray-900">Back</button>
-               )}
-               <button 
-                 onClick={handleSubmit} 
-                 disabled={loading || !title.trim()}
-                 className="px-6 py-2.5 rounded-lg bg-indigo-600 text-white text-[12px] font-bold transition-all active:scale-95 disabled:opacity-50 shadow-lg shadow-indigo-100"
-               >
-                 {loading ? <LoadingSpinner size="sm" /> : mode === 'create' ? 'Create Project' : 'Save Changes'}
-               </button>
-             </div>
-           )}
+        <div className="p-6 border-t border-gray-100 flex items-center justify-between gap-3 bg-white">
+           <div className="flex gap-3">
+              {mode === 'view' && task && (
+                <>
+                   {task.status === 'brief_pending' && (
+                     <button 
+                       onClick={() => handleStatusTransition('in_progress')}
+                       disabled={loading}
+                       className="px-5 py-2.5 rounded-lg bg-indigo-600 text-white text-[12px] font-bold transition-all active:scale-95 shadow-sm hover:bg-indigo-700"
+                     >
+                       Start Project
+                     </button>
+                   )}
+                   {task.status === 'in_progress' && (
+                     <button 
+                       onClick={() => handleStatusTransition('review')}
+                       disabled={loading}
+                       className="px-5 py-2.5 rounded-lg bg-emerald-600 text-white text-[12px] font-bold transition-all active:scale-95 shadow-sm hover:bg-emerald-700"
+                     >
+                       Submit for Review
+                     </button>
+                   )}
+                   {(user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'superadmin') && task.status === 'review' && (
+                     <div className="flex gap-2">
+                        <button 
+                          onClick={() => handleStatusTransition('in_progress')}
+                          disabled={loading}
+                          className="px-5 py-2.5 rounded-lg bg-rose-50 text-rose-600 border border-rose-100 text-[12px] font-bold transition-all active:scale-95"
+                        >
+                          Request Revisions
+                        </button>
+                        <button 
+                          onClick={() => handleStatusTransition('approved')}
+                          disabled={loading}
+                          className="px-5 py-2.5 rounded-lg bg-indigo-600 text-white text-[12px] font-bold transition-all active:scale-95 shadow-sm hover:bg-indigo-700"
+                        >
+                          Approve Project
+                        </button>
+                     </div>
+                   )}
+                   {(user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'superadmin') && task.status === 'approved' && (
+                     <button 
+                       onClick={() => handleStatusTransition('paid')}
+                       disabled={loading}
+                       className="px-5 py-2.5 rounded-lg bg-amber-500 text-white text-[12px] font-bold transition-all active:scale-95 shadow-sm hover:bg-amber-600"
+                     >
+                       Mark as Paid
+                     </button>
+                   )}
+                </>
+              )}
+           </div>
+
+           <div className="flex items-center gap-3">
+              <button onClick={onClose} className="px-5 py-2 text-xs font-bold text-gray-500 hover:text-gray-900 transition-colors">Discard</button>
+              
+              {mode === 'create' && creationStep === 0 ? (
+                <button 
+                  onClick={() => setCreationStep(1)}
+                  disabled={!title.trim() || !brand}
+                  className="px-6 py-2.5 rounded-lg bg-indigo-600 text-white text-[12px] font-bold transition-all active:scale-95 disabled:opacity-50 shadow-lg shadow-indigo-100"
+                >
+                  Next: Briefing
+                </button>
+              ) : (
+                <div className="flex gap-3">
+                  {mode === 'create' && (
+                    <button onClick={() => setCreationStep(0)} className="px-5 py-2 text-xs font-bold text-gray-500 hover:text-gray-900">Back</button>
+                  )}
+                  <button 
+                    onClick={handleSubmit} 
+                    disabled={loading || !title.trim()}
+                    className="px-6 py-2.5 rounded-lg bg-indigo-600 text-white text-[12px] font-bold transition-all active:scale-95 disabled:opacity-50 shadow-lg shadow-indigo-100"
+                  >
+                    {loading ? <LoadingSpinner size="sm" /> : mode === 'create' ? 'Create Project' : 'Save Changes'}
+                  </button>
+                </div>
+              )}
+           </div>
         </div>
       </div>
     </>

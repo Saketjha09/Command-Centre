@@ -1,7 +1,4 @@
-const BASE_URL = import.meta.env.VITE_API_URL;
-if (!BASE_URL) {
-  throw new Error('VITE_API_URL is not set');
-}
+﻿const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
 export interface EditorRate {
   editor_id: string;
@@ -140,3 +137,4 @@ export async function markPaid(runId: string): Promise<PayrollRun> {
   }
   return res.json() as Promise<PayrollRun>;
 }
+
