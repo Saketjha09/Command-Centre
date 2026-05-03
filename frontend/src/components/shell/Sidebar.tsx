@@ -95,25 +95,14 @@ export function Sidebar({ currentView, onNavigate, collapsed, onToggle, onAddMem
   const ROLE_NAV: Record<string, {id: string, label: string, icon: keyof typeof Icons}[]> = {
     superadmin: [
       { id: 'dashboard', label: 'Dashboard', icon: 'Dashboard' },
-      { id: 'board', label: 'Projects', icon: 'Tasks' },
       { id: 'availability', label: 'Availability', icon: 'Availability' },
-      { id: 'people', label: 'Freelancers', icon: 'People' },
-      { id: 'payroll', label: 'Payroll', icon: 'Payroll' },
-      { id: 'profile', label: 'Profile', icon: 'Profile' },
-      { id: 'users', label: 'System Users', icon: 'Users' },
     ],
     admin: [
       { id: 'dashboard', label: 'Dashboard', icon: 'Dashboard' },
-      { id: 'board', label: 'Projects', icon: 'Tasks' },
       { id: 'availability', label: 'Availability', icon: 'Availability' },
-      { id: 'people', label: 'Freelancers', icon: 'People' },
-      { id: 'payroll', label: 'Payroll', icon: 'Payroll' },
-      { id: 'profile', label: 'Profile', icon: 'Profile' },
     ],
     freelancer: [
-      { id: 'mytasks', label: 'My Tasks', icon: 'MyTasks' },
       { id: 'availability', label: 'Availability', icon: 'Availability' },
-      { id: 'profile', label: 'Profile', icon: 'Profile' },
     ]
   }
 

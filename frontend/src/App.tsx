@@ -1,45 +1,35 @@
 import { useState, useEffect } from 'react'
-import { KanbanBoard } from './components/kanban/KanbanBoard'
 import AvailabilityPage from './pages/AvailabilityPage'
-import { PeoplePage } from './pages/PeoplePage'
-import { PayrollPage } from './pages/PayrollPage'
 import { LoginPage } from './pages/LoginPage'
 import { RegisterPage } from './pages/RegisterPage'
 import { DashboardPage } from './pages/DashboardPage'
-import { MyTasksPage } from './pages/MyTasksPage'
 import { AuthProvider, useAuthContext } from './context/AuthContext'
 import { WSProvider, useWS } from './context/WebSocketContext'
 import { LoadingSpinner } from './components/LoadingSpinner'
 import { Sidebar } from './components/shell/Sidebar'
 import { TopBar } from './components/shell/TopBar'
 import { ProfilePage } from './pages/ProfilePage'
-import UserManagementPage from './pages/UserManagementPage'
 
-type View = 'dashboard' | 'board' | 'availability' | 'people' | 'payroll' | 'mytasks' | 'profile' | 'users'
+type View = 'dashboard' | 'availability' | 'profile'
 
 const VIEW_TITLES: Record<View, string> = {
   dashboard: 'Dashboard',
-  board: 'Projects',
   availability: 'Availability',
-  people: 'Freelancers',
-  payroll: 'Payroll',
-  mytasks: 'My Work',
   profile: 'Settings',
-  users: 'User Management',
 }
 
 // Role-based default views
 const DEFAULT_VIEW: Record<string, View> = {
   superadmin: 'dashboard',
   admin: 'dashboard',
-  freelancer: 'mytasks',
+  freelancer: 'availability',
 }
 
 // Role-based accessible views
 const ACCESSIBLE_VIEWS: Record<string, View[]> = {
-  superadmin: ['dashboard', 'board', 'availability', 'people', 'payroll', 'profile', 'users'],
-  admin: ['dashboard', 'board', 'availability', 'people', 'payroll', 'profile'],
-  freelancer: ['mytasks', 'availability', 'profile'],
+  superadmin: ['dashboard', 'availability', 'profile'],
+  admin: ['dashboard', 'availability', 'profile'],
+  freelancer: ['availability', 'profile'],
 }
 
 import { useSearchParams, BrowserRouter } from 'react-router-dom'
@@ -112,7 +102,6 @@ function AuthenticatedApp() {
     if (accessibleViews.includes(newView)) {
       const params: any = { v: newView }
       if (b !== undefined) params.brand = b
-      else if (brand && newView === 'board') params.brand = brand
       setSearchParams(params)
     }
   }
@@ -157,14 +146,9 @@ function AuthenticatedApp() {
 
 
         <main className="flex-1 overflow-hidden relative flex flex-col min-h-0 bg-white border-l border-gray-100">
-          {view === 'dashboard' && <DashboardPage onNavigate={handleNavigate} />}
-          {view === 'board' && <KanbanBoard />}
+          {view === 'dashboard' && <DashboardPage />}
           {view === 'availability' && <AvailabilityPage />}
-          {view === 'people' && <PeoplePage key={refreshTrigger} />}
-          {view === 'payroll' && <PayrollPage />}
-          {view === 'mytasks' && <MyTasksPage onNavigate={handleNavigate} />}
           {view === 'profile' && <ProfilePage />}
-          {view === 'users' && <UserManagementPage />}
         </main>
       </div>
 
