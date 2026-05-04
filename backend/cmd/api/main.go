@@ -42,19 +42,9 @@ func corsMiddleware(allowedOrigins string, env string) func(http.Handler) http.H
 				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Cookie")
 			}
 
-			if r.Method == http.MethodOptions {
-				w.WriteHeader(http.StatusNoContent)
 				return
 			}
 
-			next.ServeHTTP(w, r)
-		})
-	}
-}
-
-			// Handle OPTIONS preflight
-			if r.Method == http.MethodOptions {
-				w.WriteHeader(http.StatusNoContent)
 				return
 			}
 
