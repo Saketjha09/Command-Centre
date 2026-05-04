@@ -1,4 +1,4 @@
-// Command api is the entrypoint for the Freelance Command Center API server.
+﻿// Command api is the entrypoint for the Freelance Command Center API server.
 // It wires configuration, the database pool, the HTTP router, and OS-signal
 // handling for graceful shutdown into a single clean main() function.
 package main
@@ -28,31 +28,26 @@ import (
 	"github.com/saket/command-center/backend/pkg/middleware"
 	"strings"
 )
-
 func corsMiddleware(allowedOrigins string, env string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			origin := r.Header.Get("Origin")
-
-			if origin != "" {
-				w.Header().Set("Access-Control-Allow-Origin", origin)
-				w.Header().Set("Access-Control-Allow-Credentials", "true")
-				w.Header().Set("Vary", "Origin")
-				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Cookie")
-			}
-
-				return
-			}
-
-				return
-			}
-
-			next.ServeHTTP(w, r)
-		})
-	}
+    return func(next http.Handler) http.Handler {
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            origin := r.Header.Get("Origin")
+            if origin != "" {
+                w.Header().Set("Access-Control-Allow-Origin", origin)
+                w.Header().Set("Access-Control-Allow-Credentials", "true")
+                w.Header().Set("Vary", "Origin")
+                w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+                w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Cookie")
+            }
+            if r.Method == http.MethodOptions {
+                w.WriteHeader(http.StatusNoContent)
+                return
+            }
+            next.ServeHTTP(w, r)
+        })
+    }
 }
-
+	
 func slashMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Only strip for non-root paths that have a trailing slash
