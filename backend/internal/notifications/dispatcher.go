@@ -1,8 +1,13 @@
 package notifications
 
 import (
+	"context"
+	"fmt"
 	"log"
+	"log/slog"
+	"sync"
 
+	sentry "github.com/getsentry/sentry-go"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/saket/command-center/backend/pkg/config"
@@ -23,6 +28,11 @@ func DispatchTaskAssignmentNotification(
 		defer func() {
 			if r := recover(); r != nil {
 				log.Printf("notifications: panic recovered in DispatchTaskAssignmentNotification: %v", r)
+				if err, ok := r.(error); ok {
+					sentry.CaptureException(err)
+				} else {
+					sentry.CaptureMessage(fmt.Sprintf("%v", r))
+				}
 			}
 		}()
 		err := SendTaskAssignmentDM(cfg, slackUserID, taskTitle, brand, deadline)
@@ -38,16 +48,38 @@ func DispatchTaskAssignmentNotification(
 // DispatchStandupPing fires a goroutine that sends standup reminder DMs to
 // all intern Slack IDs. There is no task ID associated, so failures are
 // logged only — notification_failed is not applicable.
-func DispatchStandupPing(cfg *config.Config, internSlackIDs []string) {
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				log.Printf("notifications: panic recovered in DispatchStandupPing: %v", r)
+func DispatchStandupPing(ctx context.Context, wg *sync.WaitGroup, cfg *config.Config, internSlackIDs []string) {
+	defer wg.Done()
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("goroutine_panic", "routine", "DispatchStandupPing", "error", r)
+			if err, ok := r.(error); ok {
+				sentry.CaptureException(err)
+			} else {
+				sentry.CaptureMessage(fmt.Sprintf("%v", r))
 			}
-		}()
-		if err := SendStandupPing(cfg, internSlackIDs); err != nil {
-			log.Printf("notifications: standup ping failed: %v", err)
-			// No task ID to mark here — log only.
 		}
 	}()
+	select {
+	case <-ctx.Done():
+		slog.Info("goroutine_stopped", "routine", "DispatchStandupPing")
+		return
+	default:
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("notifications: panic recovered in DispatchStandupPing: %v", r)
+					if err, ok := r.(error); ok {
+						sentry.CaptureException(err)
+					} else {
+						sentry.CaptureMessage(fmt.Sprintf("%v", r))
+					}
+				}
+			}()
+			if err := SendStandupPing(cfg, internSlackIDs); err != nil {
+				log.Printf("notifications: standup ping failed: %v", err)
+				// No task ID to mark here — log only.
+			}
+		}()
+	}
 }

@@ -54,6 +54,10 @@ type Config struct {
 
 	// AllowedOrigins restricts access for the CORS middleware.
 	AllowedOrigins string
+
+	// SentryDSN is the Sentry Data Source Name for error tracking.
+	// Optional — Sentry is a no-op when empty.
+	SentryDSN string
 }
 
 // Load reads configuration from environment variables and returns a validated
@@ -73,6 +77,7 @@ func Load() (*Config, error) {
 		GoogleDriveParentID:      os.Getenv("GOOGLE_DRIVE_PARENT_ID"),
 		GOEnv:                    os.Getenv("GO_ENV"),
 		AllowedOrigins:           os.Getenv("ALLOWED_ORIGINS"),
+		SentryDSN:                os.Getenv("SENTRY_DSN"),
 	}
 
 	if cfg.GOEnv == "" {

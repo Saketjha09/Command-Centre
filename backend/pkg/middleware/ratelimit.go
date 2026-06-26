@@ -2,11 +2,14 @@ package middleware
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	sentry "github.com/getsentry/sentry-go"
 )
 
 type rateLimiter struct {
@@ -28,6 +31,11 @@ func newRateLimiter(maxReqs int, window time.Duration) *rateLimiter {
 		defer func() {
 			if r := recover(); r != nil {
 				log.Printf("PANIC in rateLimiter cleanup: %v", r)
+				if err, ok := r.(error); ok {
+					sentry.CaptureException(err)
+				} else {
+					sentry.CaptureMessage(fmt.Sprintf("%v", r))
+				}
 			}
 		}()
 

@@ -9,6 +9,7 @@ import (
 	"log"
 	"time"
 
+	sentry "github.com/getsentry/sentry-go"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/saket/command-center/backend/internal/notifications"
@@ -60,6 +61,11 @@ func DispatchMonthEndTallies(pool *pgxpool.Pool, cfg *config.Config, year, month
 		defer func() {
 			if r := recover(); r != nil {
 				log.Printf("payroll: panic recovered in DispatchMonthEndTallies: %v", r)
+				if err, ok := r.(error); ok {
+					sentry.CaptureException(err)
+				} else {
+					sentry.CaptureMessage(fmt.Sprintf("%v", r))
+				}
 			}
 		}()
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

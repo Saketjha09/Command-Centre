@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -66,17 +66,17 @@ func DispatchTallySync(pool *pgxpool.Pool, cfg *config.Config, taskID string, da
 		// Use the configured GoogleSheetsID (Master Ledger)
 		err := AppendTallyRow(cfg, cfg.GoogleSheetsID, "Ledger!A1", data)
 		if err != nil {
-			log.Printf("sheets: sync failed for task %s: %v", taskID, err)
+			slog.Error("sheets: sync failed", "function", "DispatchTallySync", "task_id", taskID, "error", err)
 			
 			// Mark as failed in DB for later retry
 			_, dbErr := pool.Exec(context.Background(), "UPDATE ops.tasks SET sync_failed = true WHERE id = $1", taskID)
 			if dbErr != nil {
-				log.Printf("sheets: failed to update sync_failed flag for task %s: %v", taskID, dbErr)
+				slog.Error("sheets: failed to update sync_failed flag", "function", "DispatchTallySync", "task_id", taskID, "error", dbErr)
 			}
 			return
 		}
 		
-		log.Printf("sheets: successfully synced tally for task %s", taskID)
+		slog.Info("sheets: successfully synced tally", "function", "DispatchTallySync", "task_id", taskID)
 		
 		// If it was previously failed, clear the flag
 		_, _ = pool.Exec(context.Background(), "UPDATE ops.tasks SET sync_failed = false WHERE id = $1", taskID)

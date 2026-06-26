@@ -9,10 +9,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
+	sentry "github.com/getsentry/sentry-go"
 	"github.com/saket/command-center/backend/pkg/config"
 )
 
@@ -72,7 +73,17 @@ func SendChannelMessage(cfg *config.Config, message string) error {
 }
 
 // SendInteractiveMessage sends a message with buttons using Slack Block Kit.
-func SendInteractiveMessage(cfg *config.Config, channel, text string, blocks []Block) error {
+func SendInteractiveMessage(ctx context.Context, cfg *config.Config, channel, text string, blocks []Block) error {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("goroutine_panic", "routine", "SendInteractiveMessage", "error", r)
+			if err, ok := r.(error); ok {
+				sentry.CaptureException(err)
+			} else {
+				sentry.CaptureMessage(fmt.Sprintf("%v", r))
+			}
+		}
+	}()
 	body, err := json.Marshal(slackRequest{Channel: channel, Text: text, Blocks: blocks})
 	if err != nil {
 		return fmt.Errorf("slack: marshal interactive request: %w", err)
@@ -131,7 +142,7 @@ func SendStandupPing(cfg *config.Config, internSlackIDs []string) error {
 	var firstErr error
 	for _, id := range internSlackIDs {
 		if err := SendDM(cfg, id, standupMessage); err != nil {
-			log.Printf("notifications: standup ping failed for %s: %v", id, err)
+			slog.Error("notifications: standup ping failed", "user_id", id, "error", err)
 			if firstErr == nil {
 				firstErr = err
 			}

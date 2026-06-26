@@ -32,7 +32,7 @@ result=$(psql "$DATABASE_DSN" -v ON_ERROR_STOP=1 \
   -v email="$email" \
   -v hash="$hashed" \
   -t -c "
-INSERT INTO ops.users (name, email, password_hash, role, is_active)
+INSERT INTO ops.users (name, email, hashed_password, role, is_active)
 VALUES (:'name', :'email', :'hash', 'superadmin', true)
 RETURNING id;")
 
