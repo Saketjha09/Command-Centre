@@ -6,12 +6,14 @@ import {
   fetchBrands, 
   createBrand, 
   deleteBrand, 
+  updateBrand,
   inviteUser, 
   updateUserRole, 
   updateUserStatus 
 } from '../services/api';
 import type { Brand } from '../types/brand';
 import type { User } from '../types/auth';
+import { BASE_URL } from '../services/config';
 
 export function PeoplePage() {
   const { user: currentUser } = useAuthContext();
@@ -25,10 +27,14 @@ export function PeoplePage() {
   // Modals
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showBrandModal, setShowBrandModal] = useState(false);
+  const [showEditBrandModal, setShowEditBrandModal] = useState(false);
 
   // Form States
   const [inviteForm, setInviteForm] = useState({ name: '', email: '', password: '' });
   const [brandForm, setBrandForm] = useState({ name: '', slug: '', hex_color: '#6366f1' });
+  const [editingBrand, setEditingBrand] = useState<Brand | null>(null);
+  const [editBrandForm, setEditBrandForm] = useState({ name: '', hex_color: '' });
+  const [editBrandError, setEditBrandError] = useState<string | null>(null);
 
   const isSuperadmin = currentUser?.role === 'superadmin';
 
@@ -110,6 +116,32 @@ export function PeoplePage() {
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
       setError('Failed to delete brand');
+    }
+  };
+
+  const openEditBrand = (brand: Brand) => {
+    setEditingBrand(brand);
+    setEditBrandForm({ name: brand.name, hex_color: brand.hex_color || '#6366f1' });
+    setEditBrandError(null);
+    setShowEditBrandModal(true);
+  };
+
+  const handleSaveEditBrand = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingBrand) return;
+    setEditBrandError(null);
+    try {
+      const updated = await updateBrand(editingBrand.id, {
+        name: editBrandForm.name,
+        hex_color: editBrandForm.hex_color,
+      });
+      setBrands(brands.map(b => b.id === updated.id ? updated : b));
+      setSuccess(`Brand "${updated.name}" updated.`);
+      setShowEditBrandModal(false);
+      setEditingBrand(null);
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      setEditBrandError(err instanceof Error ? err.message : 'Failed to update brand');
     }
   };
 
@@ -239,7 +271,7 @@ export function PeoplePage() {
                                <button 
                                  onClick={async () => {
                                    try {
-                                     const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8080'}/api/v1/notifications/slack/ping/${u.id}`, {
+                                     const res = await fetch(`${BASE_URL}/api/v1/notifications/slack/ping/${u.id}`, {
                                        method: 'POST',
                                        credentials: 'include'
                                      });
@@ -302,12 +334,22 @@ export function PeoplePage() {
                             </div>
                          </div>
                          {isSuperadmin && (
-                           <button 
-                             onClick={() => handleDeleteBrand(b.id, b.name)}
-                             className="opacity-0 group-hover:opacity-100 transition-all p-2.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl"
-                           >
-                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                           </button>
+                           <div className="flex items-center gap-1">
+                             <button
+                               onClick={() => openEditBrand(b)}
+                               className="opacity-0 group-hover:opacity-100 transition-all p-2.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl"
+                               title="Edit Brand"
+                             >
+                               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536M9 11l6.586-6.586a2 2 0 012.828 0l.172.172a2 2 0 010 2.828L12 14H9v-3z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 20h14" /></svg>
+                             </button>
+                             <button 
+                               onClick={() => handleDeleteBrand(b.id, b.name)}
+                               className="opacity-0 group-hover:opacity-100 transition-all p-2.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl"
+                               title="Delete Brand"
+                             >
+                               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                             </button>
+                           </div>
                          )}
                       </div>
                     </div>
@@ -426,6 +468,71 @@ export function PeoplePage() {
               >
                 Create Brand
               </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Brand Modal */}
+      {showEditBrandModal && editingBrand && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-gray-900/40 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden border border-gray-100">
+            <div className="p-8 border-b border-gray-100 flex items-center justify-between">
+              <h2 className="text-[11px] font-bold text-gray-900 uppercase tracking-[0.2em]">Edit Brand</h2>
+              <button
+                onClick={() => { setShowEditBrandModal(false); setEditingBrand(null); }}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >✕</button>
+            </div>
+            <form onSubmit={handleSaveEditBrand} className="p-8 space-y-6">
+              {editBrandError && (
+                <div className="p-3 rounded-xl bg-red-50 border border-red-100 text-red-600 text-[11px] font-bold uppercase tracking-widest">
+                  {editBrandError}
+                </div>
+              )}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Brand Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editBrandForm.name}
+                  onChange={e => setEditBrandForm({ ...editBrandForm, name: e.target.value })}
+                  className="w-full bg-gray-50 border-none rounded-xl px-4 py-3 text-[13px] text-gray-900 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                  placeholder="Brand name"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Theme Color</label>
+                <div className="flex gap-4">
+                  <input
+                    type="color"
+                    value={editBrandForm.hex_color}
+                    onChange={e => setEditBrandForm({ ...editBrandForm, hex_color: e.target.value })}
+                    className="w-12 h-12 rounded-xl border-none cursor-pointer p-0 bg-transparent"
+                  />
+                  <input
+                    type="text"
+                    value={editBrandForm.hex_color}
+                    onChange={e => setEditBrandForm({ ...editBrandForm, hex_color: e.target.value })}
+                    className="flex-1 bg-gray-50 border-none rounded-xl px-4 py-3 text-[13px] text-gray-900 font-mono uppercase"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => { setShowEditBrandModal(false); setEditingBrand(null); }}
+                  className="flex-1 border border-gray-200 text-gray-600 hover:bg-gray-50 py-4 rounded-2xl text-[11px] font-bold uppercase tracking-[0.2em] transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl text-[11px] font-bold uppercase tracking-[0.2em] shadow-lg shadow-indigo-200 transition-all active:scale-[0.98]"
+                >
+                  Save Changes
+                </button>
+              </div>
             </form>
           </div>
         </div>

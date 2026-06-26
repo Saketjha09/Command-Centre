@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { createTask, fetchTaskById, fetchUsers, assignTask, fetchTaskHistory, fetchBrands, transitionTaskStatus } from '../../services/api'
+import { createTask, fetchTaskById, fetchUsers, assignTask, fetchTaskHistory, fetchBrands, transitionTaskStatus, updateTask, deleteTask } from '../../services/api'
 import { LoadingSpinner } from '../LoadingSpinner'
 import ReactMarkdown from 'react-markdown'
+import { TaskComments } from '../tasks/TaskComments'
 import rehypeRaw from 'rehype-raw'
 import { RichTextEditor } from '../RichTextEditor'
 import { useAuthContext } from '../../context/AuthContext'
@@ -25,6 +26,8 @@ interface Props {
     content_type: string;
     assigned_to?: string;
   }) => Promise<void>
+  onTaskUpdated?: (task: TaskDetail) => void
+  onTaskDeleted?: (taskId: string) => void
 }
 
 const PRIORITIES = [
@@ -34,7 +37,7 @@ const PRIORITIES = [
   { id: 'urgent', label: 'Urgent', color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-100' },
 ]
 
-export function TaskDrawer({ isOpen, onClose, mode, taskId, initialStatus, onCreate }: Props) {
+export function TaskDrawer({ isOpen, onClose, mode, taskId, initialStatus, onCreate, onTaskUpdated, onTaskDeleted }: Props) {
   const { user } = useAuthContext()
   const [activeTab, setActiveTab] = useState<'details' | 'history'>('details')
   const [title, setTitle] = useState('')
@@ -57,8 +60,14 @@ export function TaskDrawer({ isOpen, onClose, mode, taskId, initialStatus, onCre
   const [history, setHistory] = useState<any[]>([])
   const [loadingHistory, setLoadingHistory] = useState(false)
 
+  // Edit / delete state (view mode only)
+  const [isEditMode, setIsEditMode] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+
   useEffect(() => {
     if (isOpen && mode === 'view' && taskId) {
+      setIsEditMode(false)
+      setShowDeleteConfirm(false)
       loadTaskData(taskId)
     } else {
       setTask(null)
@@ -72,6 +81,8 @@ export function TaskDrawer({ isOpen, onClose, mode, taskId, initialStatus, onCre
       setAssignedTo('')
       setCreationStep(0)
       setActiveTab('details')
+      setIsEditMode(false)
+      setShowDeleteConfirm(false)
     }
   }, [isOpen, mode, taskId, brands])
 
@@ -174,6 +185,45 @@ export function TaskDrawer({ isOpen, onClose, mode, taskId, initialStatus, onCre
       onClose()
     } catch (err: any) {
       setError(err.message ?? 'Failed to create task')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleSaveEdit() {
+    if (!taskId || !title.trim()) { setError('Title is required'); return }
+    setLoading(true)
+    setError(null)
+    try {
+      const updated = await updateTask(taskId, {
+        title: title.trim(),
+        description: description.trim(),
+        brand,
+        priority,
+        deadline: deadline ? new Date(deadline).toISOString() : undefined,
+        content_type: contentType,
+      })
+      setTask(updated)
+      setIsEditMode(false)
+      onTaskUpdated?.(updated)
+    } catch (err: any) {
+      setError(err.message ?? 'Failed to save changes')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleDeleteTask() {
+    if (!taskId) return
+    setLoading(true)
+    setError(null)
+    try {
+      await deleteTask(taskId)
+      onTaskDeleted?.(taskId)
+      onClose()
+    } catch (err: any) {
+      setError(err.message ?? 'Failed to delete task')
+      setShowDeleteConfirm(false)
     } finally {
       setLoading(false)
     }
@@ -310,7 +360,7 @@ export function TaskDrawer({ isOpen, onClose, mode, taskId, initialStatus, onCre
                         onChange={e=>setTitle(e.target.value)} 
                         placeholder="Task summary..."
                         className="text-2xl font-bold bg-transparent text-gray-900 placeholder-gray-200 focus:outline-none w-full border-none p-0 focus:ring-0"
-                        disabled={mode === 'view'}
+                        disabled={mode === 'view' && !isEditMode}
                       />
                     </div>
 
@@ -320,7 +370,7 @@ export function TaskDrawer({ isOpen, onClose, mode, taskId, initialStatus, onCre
                           <select 
                             value={brand} 
                             onChange={e=>setBrand(e.target.value)}
-                            disabled={mode === 'view'}
+                            disabled={mode === 'view' && !isEditMode}
                             className="w-full bg-gray-50 border border-gray-200 rounded-md px-3 py-2 text-[13px] font-medium text-gray-900 disabled:opacity-60"
                           >
                             {brands.map(b => <option key={b.id} value={b.slug}>{b.name}</option>)}
@@ -334,7 +384,7 @@ export function TaskDrawer({ isOpen, onClose, mode, taskId, initialStatus, onCre
                               <button
                                 key={p.id}
                                 onClick={() => setPriority(p.id)}
-                                disabled={mode === 'view'}
+                                disabled={mode === 'view' && !isEditMode}
                                 className={`flex-1 py-1.5 rounded text-[10px] font-bold transition-all border ${
                                   priority === p.id 
                                     ? `${p.bg} ${p.color} ${p.border}` 
@@ -351,7 +401,7 @@ export function TaskDrawer({ isOpen, onClose, mode, taskId, initialStatus, onCre
                           <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Assignee</label>
                           <select 
                             value={task?.assigned_to || assignedTo || ''} 
-                            onChange={e => mode === 'view' ? handleAssign(e.target.value) : setAssignedTo(e.target.value)}
+                            onChange={e => mode === 'view' && !isEditMode ? handleAssign(e.target.value) : setAssignedTo(e.target.value)}
                             disabled={assigning}
                             className="w-full bg-gray-50 border border-gray-200 rounded-md px-3 py-2 text-[13px] font-medium text-gray-900 disabled:opacity-60"
                           >
@@ -368,7 +418,7 @@ export function TaskDrawer({ isOpen, onClose, mode, taskId, initialStatus, onCre
                             type="date" 
                             value={deadline} 
                             onChange={e=>setDeadline(e.target.value)}
-                            disabled={mode === 'view'}
+                            disabled={mode === 'view' && !isEditMode}
                             className="w-full bg-gray-50 border border-gray-200 rounded-md px-3 py-2 text-[13px] font-medium text-gray-900 disabled:opacity-60"
                           />
                        </div>
@@ -376,7 +426,7 @@ export function TaskDrawer({ isOpen, onClose, mode, taskId, initialStatus, onCre
 
                     <div className="flex flex-col gap-4">
                        <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Project Briefing</label>
-                       {mode === 'view' ? (
+                       {mode === 'view' && !isEditMode ? (
                          <div className="w-full bg-gray-50 border border-gray-100 rounded-xl p-8 min-h-[300px]">
                             <article className="prose prose-sm max-w-none prose-slate prose-headings:font-bold prose-a:text-indigo-600">
                               <ReactMarkdown rehypePlugins={[rehypeRaw]}>{description || '_No description provided._'}</ReactMarkdown>
@@ -392,6 +442,12 @@ export function TaskDrawer({ isOpen, onClose, mode, taskId, initialStatus, onCre
                          </div>
                        )}
                     </div>
+                  </div>
+                )}
+
+                {mode === 'view' && taskId && (
+                  <div className="pt-4 border-t border-gray-100">
+                    <TaskComments taskId={taskId} />
                   </div>
                 )}
              </div>
@@ -429,86 +485,140 @@ export function TaskDrawer({ isOpen, onClose, mode, taskId, initialStatus, onCre
         </div>
 
         {/* Footer Actions */}
-        <div className="p-6 border-t border-gray-100 flex items-center justify-between gap-3 bg-white">
-           <div className="flex gap-3">
-              {mode === 'view' && task && (
-                <>
-                   {task.status === 'brief_pending' && (
-                     <button 
-                       onClick={() => handleStatusTransition('in_progress')}
-                       disabled={loading}
-                       className="px-5 py-2.5 rounded-lg bg-indigo-600 text-white text-[12px] font-bold transition-all active:scale-95 shadow-sm hover:bg-indigo-700"
-                     >
-                       Start Project
-                     </button>
-                   )}
-                   {task.status === 'in_progress' && (
-                     <button 
-                       onClick={() => handleStatusTransition('review')}
-                       disabled={loading}
-                       className="px-5 py-2.5 rounded-lg bg-emerald-600 text-white text-[12px] font-bold transition-all active:scale-95 shadow-sm hover:bg-emerald-700"
-                     >
-                       Submit for Review
-                     </button>
-                   )}
-                   {(user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'superadmin') && task.status === 'review' && (
-                     <div className="flex gap-2">
-                        <button 
-                          onClick={() => handleStatusTransition('in_progress')}
-                          disabled={loading}
-                          className="px-5 py-2.5 rounded-lg bg-rose-50 text-rose-600 border border-rose-100 text-[12px] font-bold transition-all active:scale-95"
-                        >
-                          Request Revisions
-                        </button>
-                        <button 
-                          onClick={() => handleStatusTransition('approved')}
-                          disabled={loading}
-                          className="px-5 py-2.5 rounded-lg bg-indigo-600 text-white text-[12px] font-bold transition-all active:scale-95 shadow-sm hover:bg-indigo-700"
-                        >
-                          Approve Project
-                        </button>
-                     </div>
-                   )}
-                   {(user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'superadmin') && task.status === 'approved' && (
-                     <button 
-                       onClick={() => handleStatusTransition('paid')}
-                       disabled={loading}
-                       className="px-5 py-2.5 rounded-lg bg-amber-500 text-white text-[12px] font-bold transition-all active:scale-95 shadow-sm hover:bg-amber-600"
-                     >
-                       Mark as Paid
-                     </button>
-                   )}
-                </>
-              )}
-           </div>
+        {/* Delete confirmation panel — replaces footer when active */}
+        {showDeleteConfirm ? (
+          <div className="p-6 border-t border-gray-100 bg-red-50 flex flex-col gap-3">
+            <p className="text-[13px] font-semibold text-red-700">Delete this card? This cannot be undone.</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="flex-1 px-4 py-2.5 rounded-lg border border-gray-200 text-[12px] font-bold text-gray-600 hover:bg-white transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteTask}
+                disabled={loading}
+                className="flex-1 px-4 py-2.5 rounded-lg text-[12px] font-bold text-white transition-all active:scale-95"
+                style={{ backgroundColor: 'var(--color-accent-danger)' }}
+              >
+                {loading ? <LoadingSpinner size="sm" /> : 'Confirm Delete'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="p-6 border-t border-gray-100 flex items-center justify-between gap-3 bg-white">
+             <div className="flex gap-3">
+                {mode === 'view' && task && !isEditMode && (
+                  <>
+                     {(task.status === 'unassigned' || task.status === 'assigned') && (
+                       <button
+                         onClick={() => handleStatusTransition('in_progress')}
+                         disabled={loading}
+                         className="px-5 py-2.5 rounded-lg bg-indigo-600 text-white text-[12px] font-bold transition-all active:scale-95 shadow-sm hover:bg-indigo-700"
+                       >
+                         Start Project
+                       </button>
+                     )}
+                     {task.status === 'in_progress' && (
+                       <button
+                         onClick={() => handleStatusTransition('in_review')}
+                         disabled={loading}
+                         className="px-5 py-2.5 rounded-lg bg-emerald-600 text-white text-[12px] font-bold transition-all active:scale-95 shadow-sm hover:bg-emerald-700"
+                       >
+                         Submit for Review
+                       </button>
+                     )}
+                     {(user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'superadmin') && task.status === 'in_review' && (
+                       <div className="flex gap-2">
+                          <button
+                            onClick={() => handleStatusTransition('in_progress')}
+                            disabled={loading}
+                            className="px-5 py-2.5 rounded-lg bg-rose-50 text-rose-600 border border-rose-100 text-[12px] font-bold transition-all active:scale-95"
+                          >
+                            Request Revisions
+                          </button>
+                          <button
+                            onClick={() => handleStatusTransition('done')}
+                            disabled={loading}
+                            className="px-5 py-2.5 rounded-lg bg-emerald-600 text-white text-[12px] font-bold transition-all active:scale-95 shadow-sm hover:bg-emerald-700"
+                          >
+                            Mark as Done
+                          </button>
+                       </div>
+                     )}
+                  </>
+                )}
+             </div>
 
-           <div className="flex items-center gap-3">
-              <button onClick={onClose} className="px-5 py-2 text-xs font-bold text-gray-500 hover:text-gray-900 transition-colors">Discard</button>
-              
-              {mode === 'create' && creationStep === 0 ? (
-                <button 
-                  onClick={() => setCreationStep(1)}
-                  disabled={!title.trim() || !brand}
-                  className="px-6 py-2.5 rounded-lg bg-indigo-600 text-white text-[12px] font-bold transition-all active:scale-95 disabled:opacity-50 shadow-lg shadow-indigo-100"
-                >
-                  Next: Briefing
-                </button>
-              ) : (
-                <div className="flex gap-3">
-                  {mode === 'create' && (
-                    <button onClick={() => setCreationStep(0)} className="px-5 py-2 text-xs font-bold text-gray-500 hover:text-gray-900">Back</button>
-                  )}
-                  <button 
-                    onClick={handleSubmit} 
-                    disabled={loading || !title.trim()}
-                    className="px-6 py-2.5 rounded-lg bg-indigo-600 text-white text-[12px] font-bold transition-all active:scale-95 disabled:opacity-50 shadow-lg shadow-indigo-100"
-                  >
-                    {loading ? <LoadingSpinner size="sm" /> : mode === 'create' ? 'Create Project' : 'Save Changes'}
-                  </button>
-                </div>
-              )}
-           </div>
-        </div>
+             <div className="flex items-center gap-3">
+                {/* VIEW MODE — edit + delete buttons */}
+                {mode === 'view' && !isEditMode && (
+                  <>
+                    <button
+                      onClick={() => setShowDeleteConfirm(true)}
+                      className="px-4 py-2 text-xs font-bold transition-colors rounded-lg hover:bg-red-50"
+                      style={{ color: 'var(--color-accent-danger)' }}
+                    >
+                      Delete
+                    </button>
+                    <button
+                      onClick={() => setIsEditMode(true)}
+                      className="px-5 py-2.5 rounded-lg bg-indigo-600 text-white text-[12px] font-bold transition-all active:scale-95 shadow-sm hover:bg-indigo-700"
+                    >
+                      Edit
+                    </button>
+                  </>
+                )}
+
+                {/* EDIT MODE — save + cancel */}
+                {mode === 'view' && isEditMode && (
+                  <>
+                    <button
+                      onClick={() => { setIsEditMode(false); if (task) { setTitle(task.title); setDescription(task.description || ''); setBrand(task.brand); setPriority(task.priority); setDeadline(task.deadline ? new Date(task.deadline).toISOString().split('T')[0] : ''); setContentType(task.content_type || 'script'); } }}
+                      className="px-5 py-2 text-xs font-bold text-gray-500 hover:text-gray-900 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveEdit}
+                      disabled={loading || !title.trim()}
+                      className="px-6 py-2.5 rounded-lg bg-indigo-600 text-white text-[12px] font-bold transition-all active:scale-95 disabled:opacity-50 shadow-lg shadow-indigo-100"
+                    >
+                      {loading ? <LoadingSpinner size="sm" /> : 'Save Changes'}
+                    </button>
+                  </>
+                )}
+
+                {/* CREATE MODE */}
+                {mode === 'create' && (
+                  <>
+                    <button onClick={onClose} className="px-5 py-2 text-xs font-bold text-gray-500 hover:text-gray-900 transition-colors">Discard</button>
+                    {creationStep === 0 ? (
+                      <button 
+                        onClick={() => setCreationStep(1)}
+                        disabled={!title.trim() || !brand}
+                        className="px-6 py-2.5 rounded-lg bg-indigo-600 text-white text-[12px] font-bold transition-all active:scale-95 disabled:opacity-50 shadow-lg shadow-indigo-100"
+                      >
+                        Next: Briefing
+                      </button>
+                    ) : (
+                      <div className="flex gap-3">
+                        <button onClick={() => setCreationStep(0)} className="px-5 py-2 text-xs font-bold text-gray-500 hover:text-gray-900">Back</button>
+                        <button 
+                          onClick={handleSubmit} 
+                          disabled={loading || !title.trim()}
+                          className="px-6 py-2.5 rounded-lg bg-indigo-600 text-white text-[12px] font-bold transition-all active:scale-95 disabled:opacity-50 shadow-lg shadow-indigo-100"
+                        >
+                          {loading ? <LoadingSpinner size="sm" /> : 'Create Project'}
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+             </div>
+          </div>
+        )}
       </div>
     </>
   )

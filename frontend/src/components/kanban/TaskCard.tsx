@@ -38,8 +38,7 @@ export function TaskCard({ task, isTransitioning, onClick }: TaskCardProps) {
 
   const isOverdue = task.deadline && 
     new Date(task.deadline).getTime() < Date.now() && 
-    task.status !== 'approved' && 
-    task.status !== 'paid'
+    task.status !== 'done'
 
   const priority = PRIORITY_THEME[task.priority] || PRIORITY_THEME.medium
 

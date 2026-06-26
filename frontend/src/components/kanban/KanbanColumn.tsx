@@ -12,12 +12,12 @@ interface KanbanColumnProps {
   onAdd: () => void
 }
 
-const STATUS_THEME: Record<string, { bg: string, text: string, border: string, ring: string }> = {
-  brief_pending: { bg: 'bg-slate-50', text: 'text-slate-500', border: 'border-slate-200', ring: 'ring-slate-400/10' },
+const STATUS_THEME: Record<TaskStatus, { bg: string, text: string, border: string, ring: string }> = {
+  unassigned: { bg: 'bg-slate-50', text: 'text-slate-500', border: 'border-slate-200', ring: 'ring-slate-400/10' },
+  assigned: { bg: 'bg-blue-50/50', text: 'text-blue-600', border: 'border-blue-100', ring: 'ring-blue-500/10' },
   in_progress: { bg: 'bg-indigo-50/50', text: 'text-indigo-600', border: 'border-indigo-100', ring: 'ring-indigo-500/10' },
-  review: { bg: 'bg-amber-50/50', text: 'text-amber-600', border: 'border-amber-100', ring: 'ring-amber-500/10' },
-  approved: { bg: 'bg-emerald-50/50', text: 'text-emerald-600', border: 'border-emerald-100', ring: 'ring-emerald-500/10' },
-  paid: { bg: 'bg-blue-50/50', text: 'text-blue-600', border: 'border-blue-100', ring: 'ring-blue-500/10' },
+  in_review: { bg: 'bg-amber-50/50', text: 'text-amber-600', border: 'border-amber-100', ring: 'ring-amber-500/10' },
+  done: { bg: 'bg-emerald-50/50', text: 'text-emerald-600', border: 'border-emerald-100', ring: 'ring-emerald-500/10' },
 }
 
 export function KanbanColumn({
@@ -52,7 +52,7 @@ export function KanbanColumn({
     }
   }
 
-  const theme = STATUS_THEME[status] || STATUS_THEME.brief_pending
+  const theme = STATUS_THEME[status] || STATUS_THEME.unassigned
 
   return (
     <div

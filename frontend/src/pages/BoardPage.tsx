@@ -1,11 +1,11 @@
 import { useState, useCallback, useEffect } from 'react'
-import type { TaskSummary, TaskStatus } from '../../types/task'
-import { TASK_STATUSES } from '../../types/task'
-import { fetchTasks, transitionTaskStatus, createTask } from '../../services/api'
-import { KanbanColumn } from './KanbanColumn'
-import { TaskDrawer } from './TaskDrawer'
-import { useWS } from '../../context/WebSocketContext'
-import { useAuth } from '../../hooks/useAuth'
+import type { TaskSummary, TaskStatus } from '../types/task'
+import { TASK_STATUSES } from '../types/task'
+import { fetchTasks, transitionTaskStatus, createTask } from '../services/api'
+import { KanbanColumn } from '../components/kanban/KanbanColumn'
+import { TaskDrawer } from '../components/kanban/TaskDrawer'
+import { useWS } from '../context/WebSocketContext'
+import { useAuth } from '../hooks/useAuth'
 
 const BRAND_OPTIONS = [
   { value: '', label: 'All Brands' },
@@ -27,7 +27,7 @@ export function KanbanBoard() {
   const [searchQuery, setSearchQuery] = useState('')
   const [assignedToMe, setAssignedToMe] = useState(false)
 
-  const { lastMessage, reconnect } = useWS()
+  const { lastMessage } = useWS()
   const user = useAuth()
 
   // ── Data loading ────────────────────────────────────────────────────────────
@@ -59,16 +59,17 @@ export function KanbanBoard() {
     }
 
     const msg = lastMessage;
+    const payload = msg.payload as TaskSummary;
     setTasks(prev => {
       switch (msg.type) {
         case 'task.created': {
-          if (brandFilter && msg.payload.brand !== brandFilter) return prev
-          if (prev.some(t => t.id === msg.payload.id)) return prev
-          return [...prev, msg.payload]
+          if (brandFilter && payload.brand !== brandFilter) return prev
+          if (prev.some(t => t.id === payload.id)) return prev
+          return [...prev, payload]
         }
         case 'task.assigned':
         case 'task.status_changed': {
-          return prev.map(t => t.id === msg.payload.id ? msg.payload : t)
+          return prev.map(t => t.id === payload.id ? payload : t)
         }
         default:
           return prev
@@ -84,7 +85,7 @@ export function KanbanBoard() {
     toStatus: string,
   ) => {
     setTasks(prev =>
-      prev.map(t => t.id === taskId ? { ...t, status: toStatus } : t),
+      prev.map(t => t.id === taskId ? { ...t, status: toStatus as TaskStatus } : t),
     )
     setTransitioningTaskId(taskId)
     setError(null)
@@ -93,12 +94,12 @@ export function KanbanBoard() {
       const updated = await transitionTaskStatus(taskId, toStatus)
       setTasks(prev => prev.map(t =>
         t.id === taskId
-          ? { ...t, status: updated.status, assigned_to: updated.assigned_to }
+          ? { ...t, status: updated.status as TaskStatus, assigned_to: updated.assigned_to }
           : t,
       ))
     } catch (err) {
       setTasks(prev =>
-        prev.map(t => t.id === taskId ? { ...t, status: fromStatus } : t),
+        prev.map(t => t.id === taskId ? { ...t, status: fromStatus as TaskStatus } : t),
       )
       setError(
         err instanceof Error
@@ -113,19 +114,18 @@ export function KanbanBoard() {
 
   // ── Task Creation with optimistic UI ─────────────────────────────────────────
 
-  const handleCreateTask = async (data: { title: string; brand: string; deadline?: string; status?: string }) => {
+  const handleCreateTask = async (data: { title: string; description: string; brand: string; priority: string; deadline?: string; content_type: string; assigned_to?: string; status?: string }) => {
     const tempId = `temp-${Date.now()}`
-    
-    // Add optimistic task
+
     const optimisticTask: TaskSummary = {
       id: tempId,
       title: data.title,
       brand: data.brand,
-      status: (data.status as any) || 'brief_pending',
-      assigned_to: '',
-      deadline: data.deadline || '',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      status: (data.status as TaskStatus) || 'unassigned',
+      priority: (data.priority as TaskSummary['priority']) || 'medium',
+      assigned_to: data.assigned_to || null,
+      deadline: data.deadline || null,
+      created_at: new Date().toISOString()
     }
 
     // Only show if it matches filter
@@ -246,6 +246,11 @@ export function KanbanBoard() {
                 tasks={tasksByStatus[status] ?? []}
                 transitioningTaskId={transitioningTaskId}
                 onDrop={handleDrop}
+                onTaskClick={(taskId) => {
+                  setSelectedTaskId(taskId)
+                  setDrawerInitialStatus(undefined)
+                  setIsDrawerOpen(true)
+                }}
                 onAdd={() => {
                   setSelectedTaskId(null)
                   setDrawerInitialStatus(status)
@@ -277,6 +282,13 @@ export function KanbanBoard() {
         taskId={selectedTaskId}
         initialStatus={drawerInitialStatus}
         onCreate={handleCreateTask}
+        onTaskUpdated={(updated) => {
+          setTasks(prev => prev.map(t => t.id === updated.id ? { ...t, ...updated } : t))
+        }}
+        onTaskDeleted={(deletedId) => {
+          setTasks(prev => prev.filter(t => t.id !== deletedId))
+          setIsDrawerOpen(false)
+        }}
       />
     </div>
   )

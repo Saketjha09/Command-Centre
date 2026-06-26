@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { WSMessage } from '../types/task'
-
-const WS_URL = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8080'
+import { WS_URL } from '../services/config'
 
 type ConnectionStatus = 'connecting' | 'connected' | 'disconnected'
 

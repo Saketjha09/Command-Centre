@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../hooks/useAuth'
 import { fetchTasks, fetchBrands } from '../../services/api'
+import { BASE_URL } from '../../services/config'
 import { useSearchParams } from 'react-router-dom'
 import type { Brand } from '../../types/brand'
 
@@ -83,7 +84,7 @@ export function Sidebar({ currentView, onNavigate, collapsed, onToggle, onAddMem
           const newCounts: Record<string, number> = {}
           brandsData.forEach(b => {
             newCounts[b.slug] = tasksData.filter(t => 
-              t.brand === b.slug && t.status !== 'approved' && t.status !== 'paid'
+              t.brand === b.slug && t.status !== 'done'
             ).length
           })
           setCounts(newCounts)
@@ -241,7 +242,7 @@ export function Sidebar({ currentView, onNavigate, collapsed, onToggle, onAddMem
           <div className="w-full h-full rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 border border-white shadow-md flex items-center justify-center text-[12px] font-black text-white overflow-hidden">
             {avatar_url ? (
                <img 
-                 src={avatar_url.startsWith('http') ? avatar_url : `${import.meta.env.VITE_API_URL || 'http://localhost:8080'}${avatar_url}`} 
+                 src={avatar_url.startsWith('http') ? avatar_url : `${BASE_URL}${avatar_url}`} 
                  className="w-full h-full object-cover"
                />
             ) : (

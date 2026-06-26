@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { useAuthContext } from '../context/AuthContext';
 import { updateProfile, uploadAvatar } from '../services/api';
 import { LoadingSpinner } from '../components/LoadingSpinner';
+import { BASE_URL } from '../services/config';
 
 export function ProfilePage() {
   const { user, setUser } = useAuthContext();
@@ -11,8 +12,6 @@ export function ProfilePage() {
   const [isUploading, setIsUploading] = useState(false);
   const [msg, setMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080';
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();

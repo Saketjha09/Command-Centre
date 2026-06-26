@@ -1,6 +1,5 @@
 import type { User, LoginRequest, RegisterRequest } from '../types/auth'
-
-const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
+import { BASE_URL } from './config'
 const defaultOptions: RequestInit = { credentials: 'include' }
 
 export const NOT_AUTHENTICATED = Symbol('NOT_AUTHENTICATED')

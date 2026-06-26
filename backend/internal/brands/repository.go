@@ -59,6 +59,28 @@ func CreateBrand(ctx context.Context, pool *pgxpool.Pool, req CreateBrandRequest
 	}, nil
 }
 
+func UpdateBrand(ctx context.Context, pool *pgxpool.Pool, id string, req UpdateBrandRequest) (Brand, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbTimeout)
+	defer cancel()
+
+	u, err := uuid.Parse(id)
+	if err != nil {
+		return Brand{}, fmt.Errorf("invalid brand id")
+	}
+
+	var b Brand
+	var pgID pgtype.UUID
+	err = pool.QueryRow(ctx,
+		"UPDATE ops.brands SET name = $2, hex_color = $3 WHERE id = $1 RETURNING id, name, slug, hex_color, created_at",
+		pgtype.UUID{Bytes: u, Valid: true}, req.Name, req.HexColor,
+	).Scan(&pgID, &b.Name, &b.Slug, &b.HexColor, &b.CreatedAt)
+	if err != nil {
+		return Brand{}, fmt.Errorf("brands: update failed: %w", err)
+	}
+	b.ID = uuid.UUID(pgID.Bytes).String()
+	return b, nil
+}
+
 func DeleteBrand(ctx context.Context, pool *pgxpool.Pool, id string) error {
 	ctx, cancel := context.WithTimeout(ctx, dbTimeout)
 	defer cancel()

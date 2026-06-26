@@ -1,8 +1,7 @@
 import type { TaskSummary, TaskDetail } from '../types/task'
 import type { Brand } from '../types/brand'
 import type { User } from '../types/auth'
-
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+import { BASE_URL } from './config'
 
 // All requests include credentials so the JWT HttpOnly cookie is sent.
 const defaultOptions: RequestInit = { credentials: 'include' }
@@ -33,6 +32,47 @@ export async function fetchTasks(
     throw new Error(`fetchTasks: ${res.status} ${res.statusText}`)
   }
   return res.json() as Promise<TaskSummary[]>
+}
+
+/**
+ * Update an existing task.
+ * Maps to PUT /api/v1/tasks/{id}
+ */
+export async function updateTask(taskId: string, req: {
+  title: string
+  description?: string
+  brand: string
+  priority: string
+  deadline?: string
+  content_type: string
+}): Promise<TaskDetail> {
+  const res = await fetch(`${BASE_URL}/api/v1/tasks/${taskId}`, {
+    ...defaultOptions,
+    method: 'PUT',
+    headers: getHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(req),
+  })
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(body || `updateTask: ${res.status}`)
+  }
+  return res.json() as Promise<TaskDetail>
+}
+
+/**
+ * Delete a task permanently.
+ * Maps to DELETE /api/v1/tasks/{id}
+ */
+export async function deleteTask(taskId: string): Promise<void> {
+  const res = await fetch(`${BASE_URL}/api/v1/tasks/${taskId}`, {
+    ...defaultOptions,
+    method: 'DELETE',
+    headers: getHeaders(),
+  })
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(body || `deleteTask: ${res.status}`)
+  }
 }
 
 /**
@@ -125,7 +165,7 @@ export async function assignTask(taskId: string, userId: string): Promise<TaskDe
 /**
  * Fetch all users via GET /api/v1/users.
  */
-export async function fetchUsers(): Promise<UserResponse[]> {
+export async function fetchUsers(): Promise<User[]> {
   const res = await fetch(`${BASE_URL}/api/v1/users`, {
     ...defaultOptions,
     headers: getHeaders()
@@ -297,6 +337,17 @@ export async function deleteBrand(id: string): Promise<void> {
     headers: getHeaders()
   })
   if (!res.ok) throw new Error(`deleteBrand: ${res.status}`)
+}
+
+export async function updateBrand(id: string, data: { name: string; hex_color: string }): Promise<Brand> {
+  const res = await fetch(`${BASE_URL}/api/v1/brands/${id}`, {
+    ...defaultOptions,
+    method: 'PUT',
+    headers: getHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(data)
+  })
+  if (!res.ok) throw new Error(`updateBrand: ${res.status}`)
+  return res.json()
 }
 
 /**

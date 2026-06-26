@@ -52,6 +52,10 @@ export interface TaskDetail {
   assigned_to: string | null
   created_by: string
   deadline: string | null
+  payout_amount?: number
+  content_type?: string
+  google_drive_folder_id?: string | null
+  sync_failed?: boolean
   notification_failed: boolean
   created_at: string
   updated_at: string

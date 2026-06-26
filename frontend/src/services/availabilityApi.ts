@@ -1,8 +1,7 @@
 import type { WeekAvailability, DayAvailability, AvailabilityRecord, SlotInput } from '../types/availability'
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
-// Ensure API_BASE_URL has no trailing slash to prevent // path mismatches
-const API_BASE_URL = API_URL.endsWith('/') ? API_URL.slice(0, -1) : API_URL
+import { BASE_URL } from './config'
+const API_BASE_URL = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL
 
 const defaultOptions: RequestInit = { credentials: 'include' }
 

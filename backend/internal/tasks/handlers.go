@@ -462,3 +462,63 @@ func HandleSuggestEditors(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFu
 		writeJSON(w, http.StatusOK, suggestions)
 	}
 }
+
+func HandleUpdateTask(pool *pgxpool.Pool, cfg *config.Config, hub WSBroadcaster) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		if id == "" {
+			writeError(w, http.StatusBadRequest, "missing task id")
+			return
+		}
+
+		var req UpdateTaskRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+
+		if req.Title == "" {
+			writeError(w, http.StatusBadRequest, "title is required")
+			return
+		}
+
+		task, err := updateTask(r.Context(), pool, id, req)
+		if err != nil {
+			if errors.Is(err, ErrTaskNotFound) {
+				writeError(w, http.StatusNotFound, "task not found")
+				return
+			}
+			slog.Error("tasks: update", "id", id, "error", err)
+			writeError(w, http.StatusInternalServerError, "failed to update task")
+			return
+		}
+
+		if hub != nil {
+			hub.Broadcast("task.updated", task)
+		}
+
+		writeJSON(w, http.StatusOK, task)
+	}
+}
+
+func HandleDeleteTask(pool *pgxpool.Pool, cfg *config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		if id == "" {
+			writeError(w, http.StatusBadRequest, "missing task id")
+			return
+		}
+
+		if err := deleteTask(r.Context(), pool, id); err != nil {
+			if errors.Is(err, ErrTaskNotFound) {
+				writeError(w, http.StatusNotFound, "task not found")
+				return
+			}
+			slog.Error("tasks: delete", "id", id, "error", err)
+			writeError(w, http.StatusInternalServerError, "failed to delete task")
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}
+}

@@ -60,6 +60,17 @@ type CreateTaskRequest struct {
 	AssignedTo   *string    `json:"assigned_to,omitempty"`
 }
 
+// UpdateTaskRequest is the body for PUT /api/v1/tasks/{id}.
+type UpdateTaskRequest struct {
+	Title        string     `json:"title"`
+	Description  string     `json:"description"`
+	Brand        string     `json:"brand"`
+	Priority     string     `json:"priority"`
+	Deadline     *time.Time `json:"deadline,omitempty"`
+	ContentType  string     `json:"content_type"`
+	PayoutAmount float64    `json:"payout_amount"`
+}
+
 // AssignTaskRequest is the body for PATCH /api/v1/tasks/{id}/assign.
 type AssignTaskRequest struct {
 	UserID string `json:"user_id"`

@@ -1,8 +1,8 @@
 import { AdminGridResponse } from "../types/availabilityTypes";
 import { AvailabilityRecord, SlotInput, WeekAvailability } from "../types/availability";
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080';
-const API_BASE_URL = API_URL.endsWith('/') ? API_URL.slice(0, -1) : API_URL;
+import { BASE_URL } from './config';
+const API_BASE_URL = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
 
 export async function getAdminGrid(): Promise<AdminGridResponse> {
   const response = await fetch(`${API_BASE_URL}/api/v1/availability/grid`, {

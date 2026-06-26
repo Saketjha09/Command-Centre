@@ -17,3 +17,8 @@ type CreateBrandRequest struct {
 	Slug     string `json:"slug"`
 	HexColor string `json:"hex_color"`
 }
+
+type UpdateBrandRequest struct {
+	Name     string `json:"name"`
+	HexColor string `json:"hex_color"`
+}

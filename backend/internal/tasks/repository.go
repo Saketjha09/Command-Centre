@@ -808,3 +808,44 @@ func suggestEditors(_ context.Context, pool *pgxpool.Pool, taskID string) ([]Edi
 
 	return suggestions, nil
 }
+
+func updateTask(_ context.Context, pool *pgxpool.Pool, taskID string, req UpdateTaskRequest) (TaskDetail, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+	defer cancel()
+
+	id, err := uuid.Parse(taskID)
+	if err != nil {
+		return TaskDetail{}, ErrTaskNotFound
+	}
+
+	query := `UPDATE ops.tasks SET
+		title = $2, description = $3, brand = $4, priority = $5,
+		deadline = $6, content_type = $7, payout_amount = $8, updated_at = NOW()
+		WHERE id = $1
+		RETURNING` + detailCols
+
+	row := pool.QueryRow(ctx, query,
+		id, req.Title, req.Description, req.Brand, req.Priority,
+		req.Deadline, req.ContentType, req.PayoutAmount,
+	)
+	return scanTaskDetail(row)
+}
+
+func deleteTask(_ context.Context, pool *pgxpool.Pool, taskID string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+	defer cancel()
+
+	id, err := uuid.Parse(taskID)
+	if err != nil {
+		return ErrTaskNotFound
+	}
+
+	tag, err := pool.Exec(ctx, `DELETE FROM ops.tasks WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("tasks: delete: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrTaskNotFound
+	}
+	return nil
+}

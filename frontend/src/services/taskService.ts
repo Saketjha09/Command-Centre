@@ -1,6 +1,5 @@
 import type { TaskSummary, TaskDetail, TaskStatus } from '../types/task'
-
-const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
+import { BASE_URL } from './config'
 
 export async function getTasks(): Promise<TaskSummary[]> {
   const response = await fetch(`${BASE_URL}/api/v1/tasks`, {

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { globalSearch } from '../services/api'
+import { BASE_URL } from '../services/config'
 import { useNavigate } from 'react-router-dom'
 
 interface SearchResult {
@@ -23,8 +24,6 @@ export function CommandPalette({ onAddMember, onAddBrand }: CommandPaletteProps)
   const [selectedIndex, setSelectedIndex] = useState(0)
   const navigate = useNavigate()
   const inputRef = useRef<HTMLInputElement>(null)
-
-  const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

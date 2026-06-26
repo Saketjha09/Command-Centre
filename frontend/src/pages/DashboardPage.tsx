@@ -4,8 +4,7 @@ import { fetchUsers } from '../services/api'
 import { fetchWeekAvailability, upsertAvailability } from '../services/availabilityApi'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import type { WeekAvailability } from '../types/availability'
-
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080'
+import { BASE_URL } from '../services/config'
 
 const TIME_SLOTS = [
   { id: 'day', label: 'Day', time: '9 AM - 5 PM' },

@@ -20,6 +20,9 @@ func RegisterRoutes(mux *http.ServeMux, pool *pgxpool.Pool, cfg *config.Config) 
 	mux.Handle("POST /api/v1/brands",
 		auth.Authenticate(cfg)(adminOnly(HandleCreateBrand(pool))))
 
+	mux.Handle("PUT /api/v1/brands/{id}",
+		auth.Authenticate(cfg)(adminOnly(HandleUpdateBrand(pool))))
+
 	mux.Handle("DELETE /api/v1/brands/{id}",
 		auth.Authenticate(cfg)(adminOnly(HandleDeleteBrand(pool))))
 }

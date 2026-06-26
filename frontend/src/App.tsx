@@ -9,27 +9,37 @@ import { LoadingSpinner } from './components/LoadingSpinner'
 import { Sidebar } from './components/shell/Sidebar'
 import { TopBar } from './components/shell/TopBar'
 import { ProfilePage } from './pages/ProfilePage'
+import { KanbanBoard } from './pages/BoardPage'
+import { TalentPage } from './pages/TalentPage'
+import { ScriptStudioPage } from './pages/ScriptStudioPage'
+import { PromptForgePage } from './pages/PromptForgePage'
+import { MyTasksPage } from './pages/MyTasksPage'
 
-type View = 'dashboard' | 'availability' | 'profile'
+type View = 'dashboard' | 'availability' | 'profile' | 'board' | 'talent' | 'script-studio' | 'prompt-forge' | 'mytasks'
 
 const VIEW_TITLES: Record<View, string> = {
   dashboard: 'Dashboard',
   availability: 'Availability',
   profile: 'Settings',
+  board: 'Board',
+  talent: 'Talent',
+  'script-studio': 'Script Studio',
+  'prompt-forge': 'Prompt Forge',
+  mytasks: 'My Tasks',
 }
 
 // Role-based default views
 const DEFAULT_VIEW: Record<string, View> = {
   superadmin: 'dashboard',
   admin: 'dashboard',
-  freelancer: 'availability',
+  freelancer: 'mytasks',
 }
 
 // Role-based accessible views
 const ACCESSIBLE_VIEWS: Record<string, View[]> = {
-  superadmin: ['dashboard', 'availability', 'profile'],
-  admin: ['dashboard', 'availability', 'profile'],
-  freelancer: ['availability', 'profile'],
+  superadmin: ['dashboard', 'availability', 'profile', 'board', 'talent', 'script-studio', 'prompt-forge'],
+  admin: ['dashboard', 'availability', 'profile', 'board', 'talent', 'script-studio', 'prompt-forge'],
+  freelancer: ['mytasks', 'availability', 'profile'],
 }
 
 import { useSearchParams, BrowserRouter } from 'react-router-dom'
@@ -149,6 +159,11 @@ function AuthenticatedApp() {
           {view === 'dashboard' && <DashboardPage />}
           {view === 'availability' && <AvailabilityPage />}
           {view === 'profile' && <ProfilePage />}
+          {view === 'board' && <KanbanBoard />}
+          {view === 'talent' && <TalentPage />}
+          {view === 'script-studio' && <ScriptStudioPage />}
+          {view === 'prompt-forge' && <PromptForgePage />}
+          {view === 'mytasks' && <MyTasksPage onNavigate={handleNavigate} />}
         </main>
       </div>
 

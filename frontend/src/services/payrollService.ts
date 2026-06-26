@@ -1,4 +1,4 @@
-﻿const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+﻿import { BASE_URL } from './config';
 
 export interface EditorRate {
   editor_id: string;

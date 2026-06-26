@@ -73,5 +73,13 @@ func RegisterRoutes(mux *http.ServeMux, pool *pgxpool.Pool, cfg *config.Config, 
 	// Get editor suggestions for a task — admin and superadmin only.
 	mux.Handle("GET /api/v1/tasks/{id}/suggestions",
 		adminOnly(http.HandlerFunc(HandleSuggestEditors(pool, cfg))))
+
+	// Update a task — admin and superadmin only.
+	mux.Handle("PUT /api/v1/tasks/{id}",
+		adminOnly(http.HandlerFunc(HandleUpdateTask(pool, cfg, hub))))
+
+	// Delete a task — admin and superadmin only.
+	mux.Handle("DELETE /api/v1/tasks/{id}",
+		adminOnly(http.HandlerFunc(HandleDeleteTask(pool, cfg))))
 }
 
