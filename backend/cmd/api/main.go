@@ -1,4 +1,4 @@
-﻿// Command api is the entrypoint for the Freelance Command Center API server.
+// Command api is the entrypoint for the Freelance Command Center API server.
 // It wires configuration, the database pool, the HTTP router, and OS-signal
 // handling for graceful shutdown into a single clean main() function.
 package main
@@ -7,19 +7,24 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
+	sentry "github.com/getsentry/sentry-go"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/saket/command-center/backend/internal/ai"
 	"github.com/saket/command-center/backend/internal/auth"
 	"github.com/saket/command-center/backend/internal/availability"
 	"github.com/saket/command-center/backend/internal/brands"
 	"github.com/saket/command-center/backend/internal/cron"
 	"github.com/saket/command-center/backend/internal/notifications"
+	"github.com/saket/command-center/backend/internal/ops"
 	"github.com/saket/command-center/backend/internal/payroll"
 	"github.com/saket/command-center/backend/internal/db"
 	"github.com/saket/command-center/backend/internal/tasks"
@@ -68,6 +73,18 @@ func main() {
 	}
 
 	// -------------------------------------------------------------------------
+	// 1b. Initialise Sentry — no-op when DSN is empty.
+	// -------------------------------------------------------------------------
+	if err := sentry.Init(sentry.ClientOptions{
+		Dsn:              cfg.SentryDSN,
+		Environment:      cfg.GOEnv,
+		TracesSampleRate: 0.2,
+	}); err != nil {
+		slog.Warn("sentry_init_failed", "error", err)
+	}
+	defer sentry.Flush(2 * time.Second)
+
+	// -------------------------------------------------------------------------
 	// 2. Establish the database pool — fatal if Postgres is unreachable.
 	// -------------------------------------------------------------------------
 	pool, err := db.Connect(cfg)
@@ -75,6 +92,15 @@ func main() {
 		log.Fatalf("FATAL database: %v", err)
 	}
 	log.Println("Database pool established (maxConns=25)")
+
+	// -------------------------------------------------------------------------
+	// 2b. Initialise AI usage middleware — shared dependency for Phase 4 handlers.
+	// -------------------------------------------------------------------------
+	aiMiddleware := ai.NewUsageMiddleware(pool)
+	slog.Info("ai_middleware_ready",
+		"daily_budget_usd", ai.DailyBudgetUSD,
+		"soft_limit_pct", ai.SoftLimitPercentage)
+	_ = aiMiddleware // injected into handlers in Phase 4
 
 	// -------------------------------------------------------------------------
 	// 3. Build the router and register routes.
@@ -91,8 +117,12 @@ func main() {
 	go hub.Run()
 
 	// ── Background Workers ──────────────────────────────────────────────────────
+	var wg sync.WaitGroup
 	appCtx, appCancel := context.WithCancel(context.Background())
 	go cron.StartSLAWatcher(appCtx, pool, hub)
+	go payroll.DispatchMonthEndTallies(pool, cfg, time.Now().Year(), int(time.Now().Month()))
+	wg.Add(1)
+	go notifications.DispatchStandupPing(appCtx, &wg, cfg, []string{})
 
 	// Auth domain: register, login, logout, me.
 	auth.RegisterRoutes(mux, pool, cfg)
@@ -119,6 +149,9 @@ func main() {
 
 	// Payroll domain: rates and monthly run management.
 	payroll.RegisterRoutes(mux, pool, cfg)
+
+	// Ops dashboard: lightweight task assignment.
+	ops.RegisterRoutes(mux, pool, cfg)
 
 	// WebSocket endpoint — auth is validated inside the handler (pre-upgrade).
 	// Cannot use middleware chain here: HTTP error codes are impossible post-upgrade.

@@ -14,8 +14,10 @@ import { TalentPage } from './pages/TalentPage'
 import { ScriptStudioPage } from './pages/ScriptStudioPage'
 import { PromptForgePage } from './pages/PromptForgePage'
 import { MyTasksPage } from './pages/MyTasksPage'
+import { OpsDashboardPage } from './pages/OpsDashboardPage'
+import { MyOpsTasksPage } from './pages/MyOpsTasksPage'
 
-type View = 'dashboard' | 'availability' | 'profile' | 'board' | 'talent' | 'script-studio' | 'prompt-forge' | 'mytasks'
+type View = 'dashboard' | 'availability' | 'profile' | 'board' | 'talent' | 'script-studio' | 'prompt-forge' | 'mytasks' | 'ops' | 'ops-my-tasks'
 
 const VIEW_TITLES: Record<View, string> = {
   dashboard: 'Dashboard',
@@ -26,6 +28,8 @@ const VIEW_TITLES: Record<View, string> = {
   'script-studio': 'Script Studio',
   'prompt-forge': 'Prompt Forge',
   mytasks: 'My Tasks',
+  ops: 'Ops Dashboard',
+  'ops-my-tasks': 'My Ops Tasks',
 }
 
 // Role-based default views
@@ -37,9 +41,9 @@ const DEFAULT_VIEW: Record<string, View> = {
 
 // Role-based accessible views
 const ACCESSIBLE_VIEWS: Record<string, View[]> = {
-  superadmin: ['dashboard', 'availability', 'profile', 'board', 'talent', 'script-studio', 'prompt-forge'],
-  admin: ['dashboard', 'availability', 'profile', 'board', 'talent', 'script-studio', 'prompt-forge'],
-  freelancer: ['mytasks', 'availability', 'profile'],
+  superadmin: ['dashboard', 'availability', 'profile', 'board', 'talent', 'script-studio', 'prompt-forge', 'ops'],
+  admin: ['dashboard', 'availability', 'profile', 'board', 'talent', 'script-studio', 'prompt-forge', 'ops'],
+  freelancer: ['mytasks', 'availability', 'profile', 'ops-my-tasks'],
 }
 
 import { useSearchParams, BrowserRouter } from 'react-router-dom'
@@ -164,6 +168,8 @@ function AuthenticatedApp() {
           {view === 'script-studio' && <ScriptStudioPage />}
           {view === 'prompt-forge' && <PromptForgePage />}
           {view === 'mytasks' && <MyTasksPage onNavigate={handleNavigate} />}
+          {view === 'ops' && <OpsDashboardPage />}
+          {view === 'ops-my-tasks' && <MyOpsTasksPage />}
         </main>
       </div>
 
